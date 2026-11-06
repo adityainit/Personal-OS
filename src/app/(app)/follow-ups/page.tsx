@@ -1,5 +1,4 @@
 import { CalendarClock } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { ButtonLink } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/badge";
@@ -8,8 +7,6 @@ import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { getSettings, listFollowUps, type FollowUpWithLead } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
 import { FollowUpRow } from "../leads/[id]/sections";
-
-export const metadata: Metadata = { title: "Follow-ups" };
 
 function Group({ title, description, items, tone }: { title: string; description: string; items: FollowUpWithLead[]; tone?: string }) {
   return (

@@ -1,5 +1,4 @@
 import { AlertTriangle, ArrowLeft, Bot, ExternalLink, MessageSquarePlus, Pencil, Phone, Plus, Trash2 } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createDealAction, deleteLeadAction, updateLeadAction } from "@/actions";
@@ -45,14 +44,6 @@ async function load(id: string) {
     if (e instanceof RepoError && e.code === "not_found") notFound();
     throw e;
   }
-}
-
-export async function generateMetadata({ params }: PageProps<"/leads/[id]">): Promise<Metadata> {
-  const { id } = await params;
-  if (!UUID.test(id)) return { title: "Lead" };
-  const { supabase } = await requireUser();
-  const { data } = await supabase.from("leads").select("name").eq("id", id).maybeSingle();
-  return { title: data?.name ?? "Lead" };
 }
 
 export default async function LeadPage({ params, searchParams }: PageProps<"/leads/[id]">) {

@@ -1,9 +1,6 @@
-import type { Metadata } from "next";
 import { AuthShell } from "@/components/brand/auth-shell";
 import { safeNext } from "@/lib/safe-next";
 import { LoginForm } from "./login-form";
-
-export const metadata: Metadata = { title: "Sign in" };
 
 const ERRORS: Record<string, string> = {
   not_allowed: "This account isn't allowed to use this workspace.",

@@ -8,7 +8,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "Personal OS", template: "%s · Personal OS" },
+  title: "Personal OS",
   applicationName: "Personal OS",
   description: "Personal OS: a private CRM for brand deals, freelancing and revenue.",
   robots: { index: false, follow: false },

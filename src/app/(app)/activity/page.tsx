@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { Timeline } from "@/components/activity/timeline";
 import { buttonClass } from "@/components/ui/button";
@@ -8,8 +7,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { listActivities } from "@/lib/domain/repo";
 import type { LeadKind } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
-
-export const metadata: Metadata = { title: "Activity" };
 
 const TYPES: [string, string][] = [
   ["", "All updates"],

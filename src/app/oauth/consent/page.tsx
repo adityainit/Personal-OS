@@ -1,10 +1,7 @@
 import { Bot, ShieldCheck } from "lucide-react";
-import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { buttonClass } from "@/components/ui/button";
 import { requireUser } from "@/lib/supabase/server";
-
-export const metadata: Metadata = { title: "Authorize access" };
 
 async function decide(formData: FormData) {
   "use server";

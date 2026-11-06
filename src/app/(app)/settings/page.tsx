@@ -1,5 +1,4 @@
 import { Database, Download } from "lucide-react";
-import type { Metadata } from "next";
 import { saveCreatorProfileAction, saveFollowUpRulesAction } from "@/actions";
 import { InstagramIcon } from "@/components/icons";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
@@ -9,8 +8,6 @@ import { Field, Input, Textarea } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
-
-export const metadata: Metadata = { title: "Settings" };
 
 const EXPORTS: [string, string][] = [
   ["leads", "All leads"],

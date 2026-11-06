@@ -13,7 +13,6 @@ import {
   Target,
   Wallet,
 } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { Timeline } from "@/components/activity/timeline";
 import { InstagramIcon } from "@/components/icons";
@@ -25,8 +24,6 @@ import { dashboardStats, listActivities, listFollowUps, pipelineFunnel, topOppor
 import type { Funnel } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 import { money, num, pct } from "@/lib/utils";
-
-export const metadata: Metadata = { title: "Dashboard" };
 
 function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: Funnel; icon: React.ReactNode }) {
   const steps = [

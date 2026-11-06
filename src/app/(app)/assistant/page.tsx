@@ -1,13 +1,10 @@
 import { Bot, Check, PlugZap, ShieldCheck, X } from "lucide-react";
-import type { Metadata } from "next";
 import { Card, CardHeader } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/misc";
 import { PageHeader } from "@/components/ui/page-header";
 import { env } from "@/lib/env";
 import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
-
-export const metadata: Metadata = { title: "Claude Assistant" };
 
 const PROMPTS: [string, string][] = [
   ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with a verified phone number, any public contacts, and separate Instagram DM and email drafts. If you can't verify a phone number, save it as an incomplete prospect instead."],

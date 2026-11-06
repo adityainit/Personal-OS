@@ -1,5 +1,4 @@
 import { ArrowDownRight, ArrowUpRight, Briefcase, Download, Minus } from "lucide-react";
-import type { Metadata } from "next";
 import { HBarChart, MonthlyRevenueChart } from "@/components/charts/charts";
 import { RangeFilter } from "@/components/charts/range-filter";
 import { InstagramIcon } from "@/components/icons";
@@ -11,8 +10,6 @@ import type { Funnel } from "@/lib/domain/types";
 import { previousRange, rangeInstants, resolveRange } from "@/lib/ranges";
 import { requireUser } from "@/lib/supabase/server";
 import { cn, money, num, pct } from "@/lib/utils";
-
-export const metadata: Metadata = { title: "Reports" };
 
 type Row = { label: string; cur: number; prev: number | null; kind?: "money" | "pct" | "num" };
 

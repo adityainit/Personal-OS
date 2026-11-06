@@ -1,5 +1,4 @@
 import { Briefcase, Download, IndianRupee, Plus, Target, TrendingUp, Wallet } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import { createDealAction } from "@/actions";
 import { HBarChart, MonthlyRevenueChart } from "@/components/charts/charts";
@@ -17,8 +16,6 @@ import type { DealStatus } from "@/lib/domain/types";
 import { resolveRange } from "@/lib/ranges";
 import { requireUser } from "@/lib/supabase/server";
 import { cn, money } from "@/lib/utils";
-
-export const metadata: Metadata = { title: "Revenue" };
 
 export default async function RevenuePage({ searchParams }: PageProps<"/revenue">) {
   const sp = await searchParams;
