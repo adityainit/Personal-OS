@@ -1,12 +1,11 @@
 "use server";
 
 import { searchAll } from "@/lib/domain/repo";
-import type { LeadKind, LeadStatus } from "@/lib/domain/types";
+import type { LeadStatus } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 
 export interface SearchHit {
   lead_id: string;
-  kind: LeadKind;
   name: string;
   status: LeadStatus;
   matched_on: string;

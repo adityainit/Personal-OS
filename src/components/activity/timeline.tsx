@@ -42,7 +42,7 @@ const ICONS: Record<string, [LucideIcon, string]> = {
   payment_received: [IndianRupee, "text-success bg-success/10"],
 };
 
-export type ActivityRow = Activity & { lead?: Pick<Lead, "id" | "name" | "kind"> | null };
+export type ActivityRow = Activity & { lead?: Pick<Lead, "id" | "name"> | null };
 
 export function Timeline({ items, showLead = false }: { items: ActivityRow[]; showLead?: boolean }) {
   if (items.length === 0) return <p className="px-4 py-8 text-center text-xs text-muted">No activity yet.</p>;

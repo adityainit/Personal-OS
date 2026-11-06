@@ -1,4 +1,4 @@
-import type { DealStatus, InteractionType, LeadKind, LeadStatus, OutreachChannel } from "./types";
+import type { DealStatus, InteractionType, LeadStatus, OutreachChannel } from "./types";
 
 export const LEAD_STATUSES: LeadStatus[] = [
   "new",
@@ -49,8 +49,6 @@ export const STATUS_TONE: Record<LeadStatus, string> = {
   lost: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
   do_not_contact: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
 };
-
-export const KIND_LABEL: Record<LeadKind, string> = { brand: "Brand", freelance: "Freelance" };
 
 export const CHANNELS: OutreachChannel[] = ["instagram_dm", "email", "linkedin", "other"];
 export const CHANNEL_LABEL: Record<OutreachChannel, string> = {

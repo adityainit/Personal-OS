@@ -2,7 +2,7 @@ import { SubmitButton } from "@/components/ui/action-form";
 import { DateField } from "@/components/ui/datetime-field";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { DEAL_STATUSES, DEAL_STATUS_LABEL } from "@/lib/domain/constants";
-import type { Deal, Lead, LeadKind, Payment } from "@/lib/domain/types";
+import type { Deal, Lead, Payment } from "@/lib/domain/types";
 
 export function DealFields({
   deal,
@@ -10,41 +10,32 @@ export function DealFields({
   fixedLead,
 }: {
   deal?: Deal;
-  leads?: Pick<Lead, "id" | "name" | "kind">[];
-  fixedLead?: { id: string; kind: LeadKind; name: string };
+  leads?: Pick<Lead, "id" | "name">[];
+  fixedLead?: { id: string; name: string };
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {fixedLead ? (
-        <>
-          <input type="hidden" name="lead_id" value={fixedLead.id} />
-          <input type="hidden" name="kind" value={fixedLead.kind} />
-        </>
+        <input type="hidden" name="lead_id" value={fixedLead.id} />
       ) : (
         <>
-          <Field label="Linked lead (optional)">
+          <Field label="Linked brand (optional)" className="sm:col-span-2">
             <Select name="lead_id" defaultValue={deal?.lead_id ?? ""}>
               <option value="">— None —</option>
               {(leads ?? []).map((l) => (
                 <option key={l.id} value={l.id}>
-                  {l.name} ({l.kind === "brand" ? "brand" : "freelance"})
+                  {l.name}
                 </option>
               ))}
             </Select>
           </Field>
-          <Field label="Source *">
-            <Select name="kind" defaultValue={deal?.kind ?? "brand"} required>
-              <option value="brand">Brand collaboration</option>
-              <option value="freelance">Freelance project</option>
-            </Select>
-          </Field>
-          <Field label="Client / brand name" hint="Filled from the linked lead if left empty" className="sm:col-span-2">
+          <Field label="Brand name" hint="Filled from the linked brand if left empty" className="sm:col-span-2">
             <Input name="client_name" defaultValue={deal?.client_name ?? ""} />
           </Field>
         </>
       )}
-      <Field label={fixedLead?.kind === "freelance" ? "Project *" : "Campaign / project *"} className="sm:col-span-2">
-        <Input name="title" required defaultValue={deal?.title} placeholder={fixedLead?.kind === "freelance" ? "e.g. Landing page redesign" : "e.g. 2 reels + 3 stories"} />
+      <Field label="Campaign *" className="sm:col-span-2">
+        <Input name="title" required defaultValue={deal?.title} placeholder="e.g. 2 reels + 3 stories" />
       </Field>
       <Field label="Deal amount (₹) *">
         <Input name="amount" inputMode="decimal" required defaultValue={deal?.amount ?? ""} placeholder="e.g. 15000" />

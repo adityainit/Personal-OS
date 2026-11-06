@@ -1,4 +1,4 @@
-import { Briefcase, Database, Download } from "lucide-react";
+import { Database, Download } from "lucide-react";
 import { saveCreatorProfileAction, saveFollowUpRulesAction } from "@/actions";
 import { InstagramIcon } from "@/components/icons";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
@@ -7,7 +7,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { getSettings } from "@/lib/domain/repo";
-import { rulesFor } from "@/lib/domain/types";
+import { followUpRules } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 
 const EXPORTS: [string, string][] = [
@@ -22,8 +22,7 @@ export default async function SettingsPage() {
   const { supabase, user } = await requireUser();
   const s = await getSettings(supabase);
   const p = s.creator_profile ?? {};
-  const brandRules = rulesFor(s, "brand");
-  const freelanceRules = rulesFor(s, "freelance");
+  const rules = followUpRules(s);
 
   return (
     <>
@@ -65,9 +64,6 @@ export default async function SettingsPage() {
             <Field label="Rates" className="sm:col-span-2">
               <Textarea name="rates" rows={2} defaultValue={p.rates ?? ""} placeholder="Reel ₹X, story set ₹Y…" />
             </Field>
-            <Field label="Freelance skills & services" className="sm:col-span-2">
-              <Textarea name="freelance_skills" rows={3} defaultValue={p.freelance_skills ?? ""} placeholder="React/Next.js, Node, Supabase, UI/UX, automation…" />
-            </Field>
             <Field label="Short bio" className="sm:col-span-2">
               <Textarea name="bio" rows={3} defaultValue={p.bio ?? ""} />
             </Field>
@@ -81,34 +77,20 @@ export default async function SettingsPage() {
           <Card id="follow-up-rules">
             <CardHeader
               title="Follow-up rules"
-              description="Separate timing for brands and clients. Applied when you mark a message as sent."
+              description="Applied when you mark a message as sent. Brands reply slowly to DMs, so wait a few days and don't over-nudge."
             />
-            <ActionForm action={saveFollowUpRulesAction} reset={false} closeDialog={false} className="flex flex-col gap-5 p-4">
-              {(
-                [
-                  ["brand", "Instagram brand deals", "Brands reply slowly to DMs, so wait longer and nudge less.", brandRules],
-                  ["freelance", "Freelancing", "Clients reached by email, phone or LinkedIn.", freelanceRules],
-                ] as const
-              ).map(([k, title, hint, r]) => (
-                <fieldset key={k} className="flex flex-col gap-3 rounded-xl border border-border p-3">
-                  <legend className="flex items-center gap-1.5 px-1 text-sm font-medium">
-                    {k === "brand" ? <InstagramIcon className="size-3.5" /> : <Briefcase className="size-3.5" />}
-                    {title}
-                  </legend>
-                  <p className="-mt-1 text-[11px] text-muted">{hint}</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    <Field label="First after (days)">
-                      <Input name={`${k}_first_follow_up_days`} type="number" min={0} max={90} defaultValue={r.first} />
-                    </Field>
-                    <Field label="Then every (days)">
-                      <Input name={`${k}_follow_up_gap_days`} type="number" min={1} max={90} defaultValue={r.gap} />
-                    </Field>
-                    <Field label="Max follow-ups">
-                      <Input name={`${k}_max_follow_ups`} type="number" min={0} max={20} defaultValue={r.max} />
-                    </Field>
-                  </div>
-                </fieldset>
-              ))}
+            <ActionForm action={saveFollowUpRulesAction} reset={false} closeDialog={false} className="flex flex-col gap-4 p-4">
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="First after (days)">
+                  <Input name="default_follow_up_days" type="number" min={0} max={90} defaultValue={rules.first} />
+                </Field>
+                <Field label="Then every (days)">
+                  <Input name="follow_up_gap_days" type="number" min={1} max={90} defaultValue={rules.gap} />
+                </Field>
+                <Field label="Max follow-ups">
+                  <Input name="max_follow_ups" type="number" min={0} max={20} defaultValue={rules.max} />
+                </Field>
+              </div>
               <p className="text-[11px] text-muted">0 days or 0 follow-ups = don&apos;t schedule follow-ups automatically.</p>
               <div className="flex justify-end">
                 <SubmitButton>Save rules</SubmitButton>

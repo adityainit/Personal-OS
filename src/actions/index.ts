@@ -69,38 +69,12 @@ export async function setLeadStatusAction(id: string, status: LeadStatus): Promi
   }
 }
 
-export async function deleteLeadAction(id: string, kind: string): Promise<ActionResult> {
+export async function deleteLeadAction(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser();
     await repo.deleteLead(supabase, id);
     refresh();
-    return ok("Lead deleted", { redirect: kind === "brand" ? "/brands" : "/freelance" });
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Incomplete prospects
-// ---------------------------------------------------------------------------
-export async function promoteProspectAction(id: string, _: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    const raw = formToObject(fd);
-    const lead = await repo.promoteProspect(supabase, id, { phone_number: raw.phone_number, phone_country: raw.phone_country });
-    refresh();
-    return ok(`${lead.name} saved as a lead`, { redirect: `/leads/${lead.id}` });
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function deleteProspectAction(id: string): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.deleteProspect(supabase, id);
-    refresh();
-    return ok("Prospect removed");
+    return ok("Lead deleted", { redirect: "/brands" });
   } catch (e) {
     return fail(e);
   }
@@ -392,9 +366,6 @@ export async function saveFollowUpRulesAction(_: ActionResult | null, fd: FormDa
     refresh();
     return ok("Follow-up rules saved");
   } catch (e) {
-    if (e instanceof Error && /brand_|freelance_/.test(e.message)) {
-      return { ok: false, error: "Run database migration 4 in Supabase first (see README → Supabase setup)." };
-    }
     return fail(e);
   }
 }

@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, Briefcase, Download, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Download, Minus } from "lucide-react";
 import { HBarChart, MonthlyRevenueChart } from "@/components/charts/charts";
 import { RangeFilter } from "@/components/charts/range-filter";
 import { InstagramIcon } from "@/components/icons";
@@ -60,8 +60,7 @@ function CompareTable({ rows, hasPrev }: { rows: Row[]; hasPrev: boolean }) {
   );
 }
 
-function funnelRows(kind: "brand" | "freelance", f: Funnel, p: Funnel | null): Row[] {
-  const brand = kind === "brand";
+function funnelRows(f: Funnel, p: Funnel | null): Row[] {
   const r = (label: string, key: keyof Funnel, k: Row["kind"] = "num"): Row => ({
     label,
     cur: Number(f[key]),
@@ -69,20 +68,18 @@ function funnelRows(kind: "brand" | "freelance", f: Funnel, p: Funnel | null): R
     kind: k,
   });
   return [
-    r(brand ? "Brands discovered" : "Businesses researched", "discovered"),
-    ...(brand ? [] : [r("Qualified leads", "qualified")]),
-    r(brand ? "Brands contacted" : "Clients contacted", "contacted"),
+    r("Brands discovered", "discovered"),
+    r("Brands contacted", "contacted"),
     r("Messages sent", "messages_sent"),
     r("Replies received", "replied"),
-    r(brand ? "Interested brands" : "Interested clients", "interested"),
-    r(brand ? "Collaborations confirmed" : "Projects secured", "won"),
+    r("Interested brands", "interested"),
+    r("Collaborations confirmed", "won"),
     r("Reply rate", "reply_rate", "pct"),
     r("Conversion rate (won ÷ contacted)", "conversion_rate", "pct"),
   ];
 }
 
-function FunnelCard({ kind, f, p, title, icon }: { kind: "brand" | "freelance"; f: Funnel; p: Funnel | null; title: string; icon: React.ReactNode }) {
-  const brand = kind === "brand";
+function FunnelCard({ f, p, title, icon }: { f: Funnel; p: Funnel | null; title: string; icon: React.ReactNode }) {
   return (
     <Card>
       <CardHeader
@@ -93,17 +90,16 @@ function FunnelCard({ kind, f, p, title, icon }: { kind: "brand" | "freelance"; 
         <HBarChart
           label={`${title} funnel`}
           data={[
-            { name: brand ? "Discovered" : "Researched", value: f.discovered },
-            ...(brand ? [] : [{ name: "Qualified", value: f.qualified }]),
+            { name: "Discovered", value: f.discovered },
             { name: "Contacted", value: f.contacted },
             { name: "Replied", value: f.replied },
             { name: "Interested", value: f.interested },
-            { name: brand ? "Confirmed" : "Secured", value: f.won },
+            { name: "Confirmed", value: f.won },
           ]}
         />
       </div>
       <div className="border-t border-border">
-        <CompareTable rows={funnelRows(kind, f, p)} hasPrev={p !== null} />
+        <CompareTable rows={funnelRows(f, p)} hasPrev={p !== null} />
       </div>
     </Card>
   );
@@ -117,19 +113,15 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const old = prev ? rangeInstants(prev) : null;
   const { supabase } = await requireUser();
 
-  const [bf, ff, rev, pbf, pff, prev_rev] = await Promise.all([
-    pipelineFunnel(supabase, "brand", cur.from, cur.to),
-    pipelineFunnel(supabase, "freelance", cur.from, cur.to),
+  const [bf, rev, pbf, prev_rev] = await Promise.all([
+    pipelineFunnel(supabase, cur.from, cur.to),
     revenueSummary(supabase, range.from ?? undefined, range.to ?? undefined),
-    old ? pipelineFunnel(supabase, "brand", old.from, old.to) : null,
-    old ? pipelineFunnel(supabase, "freelance", old.from, old.to) : null,
+    old ? pipelineFunnel(supabase, old.from, old.to) : null,
     prev ? revenueSummary(supabase, prev.from!, prev.to!) : null,
   ]);
 
   const revRows: Row[] = [
     { label: "Total earnings", cur: Number(rev.total_received), prev: prev_rev ? Number(prev_rev.total_received) : null, kind: "money" },
-    { label: "Brand collaboration earnings", cur: Number(rev.brand_received), prev: prev_rev ? Number(prev_rev.brand_received) : null, kind: "money" },
-    { label: "Freelance earnings", cur: Number(rev.freelance_received), prev: prev_rev ? Number(prev_rev.freelance_received) : null, kind: "money" },
     { label: "Deal value won", cur: Number(rev.won_deal_value), prev: prev_rev ? Number(prev_rev.won_deal_value) : null, kind: "money" },
     { label: "Pending payments (now)", cur: Number(rev.pending_payments), prev: null, kind: "money" },
     { label: "Expected from active deals (now)", cur: Number(rev.expected_from_active), prev: null, kind: "money" },
@@ -151,21 +143,19 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <RangeFilter base="/reports" range={range} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <FunnelCard kind="brand" f={bf} p={pbf} title="Instagram brand deals" icon={<InstagramIcon className="size-4" />} />
-        <FunnelCard kind="freelance" f={ff} p={pff} title="Freelancing" icon={<Briefcase className="size-4" />} />
-      </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader title="Monthly earnings" description={range.label} />
-          <div className="p-4">
-            <MonthlyRevenueChart data={rev.monthly} from={range.from} to={range.to} />
-          </div>
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader title="Revenue" description={prev ? "vs previous period" : undefined} />
-          <CompareTable rows={revRows} hasPrev={prev !== null} />
-        </Card>
+        <FunnelCard f={bf} p={pbf} title="Instagram brand deals" icon={<InstagramIcon className="size-4" />} />
+        <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader title="Monthly earnings" description={range.label} />
+            <div className="p-4">
+              <MonthlyRevenueChart data={rev.monthly} from={range.from} to={range.to} />
+            </div>
+          </Card>
+          <Card>
+            <CardHeader title="Revenue" description={prev ? "vs previous period" : undefined} />
+            <CompareTable rows={revRows} hasPrev={prev !== null} />
+          </Card>
+        </div>
       </div>
     </>
   );

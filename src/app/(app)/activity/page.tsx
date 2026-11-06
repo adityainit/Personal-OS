@@ -5,12 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { listActivities } from "@/lib/domain/repo";
-import type { LeadKind } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 
 const TYPES: [string, string][] = [
   ["", "All updates"],
-  ["lead_created", "New leads"],
+  ["lead_created", "New brands"],
   ["research", "Research"],
   ["outreach", "Outreach"],
   ["reply_received", "Replies"],
@@ -28,19 +27,17 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
   const s = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const type = s("type");
   const actor = ["me", "claude", "system"].includes(s("actor")) ? s("actor") : "";
-  const kind = (["brand", "freelance"].includes(s("kind")) ? s("kind") : "") as LeadKind | "";
   const before = s("before");
 
   const { supabase } = await requireUser();
   const items = await listActivities(supabase, {
     type: type || undefined,
     actor: actor || undefined,
-    kind: kind || undefined,
     before: before || undefined,
     limit: PAGE,
   });
   const nextCursor = items.length === PAGE ? items[items.length - 1].created_at : null;
-  const keep = new URLSearchParams(Object.entries({ type, actor, kind }).filter(([, v]) => v) as [string, string][]);
+  const keep = new URLSearchParams(Object.entries({ type, actor }).filter(([, v]) => v) as [string, string][]);
 
   return (
     <>
@@ -60,15 +57,10 @@ export default async function ActivityPage({ searchParams }: PageProps<"/activit
             <option value="claude">Claude</option>
             <option value="system">Automatic</option>
           </Select>
-          <Select name="kind" defaultValue={kind} className="w-auto" aria-label="Area">
-            <option value="">Brands & freelance</option>
-            <option value="brand">Brands</option>
-            <option value="freelance">Freelance</option>
-          </Select>
           <button type="submit" className={buttonClass("secondary")}>
             Filter
           </button>
-          {type || actor || kind ? (
+          {type || actor ? (
             <Link href="/activity" className="text-xs text-muted hover:text-fg">
               Clear
             </Link>

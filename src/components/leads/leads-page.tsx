@@ -8,66 +8,47 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/form";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
-import { listLeads, listProspects, type LeadFilters } from "@/lib/domain/repo";
-import type { LeadKind, LeadStatus } from "@/lib/domain/types";
+import { listLeads, type LeadFilters } from "@/lib/domain/repo";
+import type { LeadStatus } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { LeadFields } from "./lead-form";
 import { LeadsBoard } from "./leads-board";
 import { LeadsTable } from "./leads-table";
-import { ProspectsPanel } from "./prospects-panel";
 
 type SP = Record<string, string | string[] | undefined>;
 const str = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
-const COPY = {
-  brand: {
-    title: "Instagram Brand Deals",
-    description: "Brands that could sponsor or collaborate with your content.",
-    empty: "No brands yet",
-    emptyHint: 'Ask Claude: "Find 10 brands that fit my Instagram profile and add them to my CRM."',
-    add: "Add brand",
-  },
-  freelance: {
-    title: "Freelancing",
-    description: "Agencies, startups and businesses that could hire you.",
-    empty: "No freelance leads yet",
-    emptyHint: 'Ask Claude: "Research five software development agencies that could hire me."',
-    add: "Add lead",
-  },
+const copy = {
+  title: "Instagram Brand Deals",
+  description: "Brands that could sponsor or collaborate with your content.",
+  empty: "No brands yet",
+  emptyHint: 'Ask Claude: "Find 10 brands that fit my Instagram profile and add them to my CRM."',
+  add: "Add brand",
 } as const;
 
-export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; searchParams: SP }) {
+export async function LeadsPage({ searchParams }: { searchParams: SP }) {
   const { supabase } = await requireUser();
   const view = str(searchParams.view) === "board" ? "board" : "table";
   const status = str(searchParams.status);
   const filters: LeadFilters = {
-    kind,
     q: str(searchParams.q),
     status: status === "open"
       ? ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"]
       : (LEAD_STATUSES as string[]).includes(status ?? "") ? (status as LeadStatus) : undefined,
     minFit: str(searchParams.minFit) ? Number(str(searchParams.minFit)) : undefined,
     source: str(searchParams.source) === "claude" ? "claude" : str(searchParams.source) === "manual" ? "manual" : undefined,
-    noPhone: str(searchParams.phone) === "missing",
     sort: (["updated", "created", "fit", "name"] as const).find((s) => s === str(searchParams.sort)) ?? "updated",
   };
-  // Phone numbers (and so "incomplete prospects") only matter for freelance leads.
-  const isFreelance = kind === "freelance";
-  const [leads, prospects, noPhoneAll] = await Promise.all([
-    listLeads(supabase, { ...filters, noPhone: isFreelance && filters.noPhone }),
-    listProspects(supabase, kind),
-    isFreelance ? listLeads(supabase, { kind, noPhone: true, limit: 500 }) : Promise.resolve([]),
-  ]);
-  const copy = COPY[kind];
-  const base = kind === "brand" ? "/brands" : "/freelance";
+  const leads = await listLeads(supabase, filters);
+  const base = "/brands";
   const qs = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...searchParams, ...patch })) if (typeof v === "string" && v) p.set(k, v);
     const s = p.toString();
     return s ? `${base}?${s}` : base;
   };
-  const filtered = Boolean(filters.q || status || filters.minFit || filters.source || filters.noPhone);
+  const filtered = Boolean(filters.q || status || filters.minFit || filters.source);
 
   return (
     <>
@@ -76,41 +57,29 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
         description={`${copy.description} ${leads.length} shown.`}
         actions={
           <>
-            <a href={`/api/export?type=leads&kind=${kind}`} className={buttonClass("secondary", "md")}>
+            <a href="/api/export?type=leads" className={buttonClass("secondary", "md")}>
               <Download /> CSV
             </a>
             <Dialog
               trigger={<><Plus /> {copy.add}</>}
               title={copy.add}
               wide
-              description={isFreelance ? "Duplicates are detected by website, Instagram handle and phone number." : "Duplicates are detected by Instagram handle and website."}
+              description="Duplicates are detected by Instagram handle and website."
             >
               <ActionForm action={createLeadAction}>
-                <LeadFields kind={kind} />
+                <LeadFields />
               </ActionForm>
             </Dialog>
           </>
         }
       />
 
-      {noPhoneAll.length > 0 && !filters.noPhone ? (
-        <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-          <span>
-            <b>{noPhoneAll.length}</b> existing {noPhoneAll.length === 1 ? "lead has" : "leads have"} no phone number. Nothing was changed — open each one and add a number.
-          </span>
-          <Link href={qs({ phone: "missing" })} className="font-medium text-accent underline">
-            Show them
-          </Link>
-        </div>
-      ) : null}
-      <ProspectsPanel prospects={prospects} />
-
       <Card>
         <form className="flex flex-wrap items-center gap-2 border-b border-border p-3" action={base}>
           <input type="hidden" name="view" value={view} />
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <Input name="q" defaultValue={filters.q} placeholder={isFreelance ? "Filter by name, domain, @handle, phone" : "Filter by name, @handle, domain"} className="pl-8" />
+            <Input name="q" defaultValue={filters.q} placeholder="Filter by name, @handle, domain" className="pl-8" />
           </div>
           <Select name="status" defaultValue={status ?? ""} className="w-auto" aria-label="Status">
             <option value="">All statuses</option>
@@ -142,7 +111,7 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
             Apply
           </button>
           {filtered ? (
-            <Link href={qs({ q: undefined, status: undefined, minFit: undefined, source: undefined, phone: undefined })} className="text-xs text-muted hover:text-fg">
+            <Link href={qs({ q: undefined, status: undefined, minFit: undefined, source: undefined })} className="text-xs text-muted hover:text-fg">
               Clear
             </Link>
           ) : null}
@@ -177,7 +146,7 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
         ) : view === "board" ? (
           <LeadsBoard leads={leads} />
         ) : (
-          <LeadsTable leads={leads} kind={kind} />
+          <LeadsTable leads={leads} />
         )}
       </Card>
     </>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toCsv } from "@/lib/csv";
-import { contactSchema, dealSchema, leadCreateSchema, leadUpdateSchema, paymentSchema, prospectSchema } from "@/lib/domain/schemas";
+import { contactSchema, dealSchema, leadCreateSchema, leadUpdateSchema, paymentSchema } from "@/lib/domain/schemas";
 import { formatPhone, splitPhone, validatePhone } from "@/lib/domain/phone";
 import { createLead, RepoError, updateLead, type Db } from "@/lib/domain/repo";
 import { previousRange, rangeInstants, resolveRange } from "@/lib/ranges";
@@ -46,8 +46,7 @@ describe("safeNext", () => {
   });
 });
 
-const OK_LEAD = { kind: "freelance", name: "Acme", website: "acme.ai", phone_country: "IN", phone_number: "98765 43210" };
-const OK_BRAND = { kind: "brand", name: "Glow Labs", instagram_handle: "@glowlabs" };
+const OK_BRAND = { name: "Glow Labs", instagram_handle: "@glowlabs" };
 
 describe("phone validation", () => {
   it("accepts real numbers and returns E.164", () => {
@@ -74,59 +73,44 @@ describe("phone validation", () => {
   });
 });
 
-describe("lead creation rules (forms and MCP share these)", () => {
-  it("accepts a valid lead; email and contact person stay optional", () => {
-    const r = leadCreateSchema.parse({ ...OK_LEAD, fit_score: "80", tags: "AI, DevTools ," });
-    expect(r).toMatchObject({ name: "Acme", phone_e164: "+919876543210", phone_country: "IN", fit_score: 80, tags: ["ai", "devtools"], email: null, contact_person: null });
+describe("brand lead rules (forms and MCP share these)", () => {
+  it("accepts a brand with an Instagram handle; phone, email and contact person stay optional", () => {
+    const r = leadCreateSchema.parse({ ...OK_BRAND, fit_score: "80", tags: "AI, DevTools ," });
+    expect(r).toMatchObject({ name: "Glow Labs", phone_e164: null, phone_country: null, fit_score: 80, tags: ["ai", "devtools"], email: null, contact_person: null });
     expect(r).not.toHaveProperty("phone_number");
+    expect(r).not.toHaveProperty("kind");
   });
-  it("rejects a lead with no phone, or an invalid one, naming the phone field", () => {
-    for (const phone_number of [undefined, "", "123", "abcdefghij"]) {
-      const r = leadCreateSchema.safeParse({ ...OK_LEAD, phone_number });
-      expect(r.success).toBe(false);
-      if (!r.success) expect(r.error.issues[0].path).toEqual(["phone_number"]);
-    }
-  });
-  it("needs a website or a social profile", () => {
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, website: "" }).success).toBe(false);
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, website: "", instagram_handle: "@acme" }).success).toBe(true);
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, website: "", linkedin_url: "linkedin.com/company/acme" }).success).toBe(true);
-  });
-  it("rejects a malformed email but allows none", () => {
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, email: "not-an-email" }).success).toBe(false);
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, email: "" }).success).toBe(true);
-  });
-  it("rejects bad fit score and bad urls", () => {
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, fit_score: 150 }).success).toBe(false);
-    expect(leadCreateSchema.safeParse({ ...OK_LEAD, website: "not a url" }).success).toBe(false);
-  });
-  it("edits validate the phone only when supplied; an empty one means 'remove' (repo blocks that for freelance)", () => {
-    expect(leadUpdateSchema.parse({ status: "won" })).toEqual({ status: "won" });
-    expect(leadUpdateSchema.safeParse({ phone_number: "98765 43210", phone_country: "IN" }).data).toMatchObject({ phone_e164: "+919876543210" });
-    expect(leadUpdateSchema.parse({ phone_number: "", phone_country: "IN" })).toMatchObject({ phone_e164: null });
-    expect(leadUpdateSchema.safeParse({ phone_number: "12", phone_country: "IN" }).success).toBe(false);
-  });
-  it("brand deals need no phone number, but an Instagram handle or website", () => {
-    expect(leadCreateSchema.parse(OK_BRAND)).toMatchObject({ phone_e164: null, phone_country: null });
+  it("needs an Instagram handle or website", () => {
     expect(leadCreateSchema.safeParse({ ...OK_BRAND, instagram_handle: "", website: "glowlabs.com" }).success).toBe(true);
     const r = leadCreateSchema.safeParse({ ...OK_BRAND, instagram_handle: "", linkedin_url: "linkedin.com/company/glow" });
     expect(r.success).toBe(false);
     if (!r.success) expect(r.error.issues[0].path).toEqual(["instagram_handle"]);
   });
-  it("a phone number given for a brand is still validated", () => {
+  it("a phone number that is given is still validated", () => {
     expect(leadCreateSchema.safeParse({ ...OK_BRAND, phone_number: "123", phone_country: "IN" }).success).toBe(false);
     expect(leadCreateSchema.parse({ ...OK_BRAND, phone_number: "98765 43210", phone_country: "IN" }).phone_e164).toBe("+919876543210");
   });
-  it("prospects need no phone", () => {
-    expect(prospectSchema.safeParse({ kind: "freelance", name: "Maybe Agency" }).success).toBe(true);
+  it("rejects a malformed email but allows none", () => {
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, email: "not-an-email" }).success).toBe(false);
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, email: "" }).success).toBe(true);
+  });
+  it("rejects bad fit score and bad urls", () => {
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, fit_score: 150 }).success).toBe(false);
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, website: "not a url" }).success).toBe(false);
+  });
+  it("edits validate the phone only when supplied; an empty one means 'remove'", () => {
+    expect(leadUpdateSchema.parse({ status: "won" })).toEqual({ status: "won" });
+    expect(leadUpdateSchema.safeParse({ phone_number: "98765 43210", phone_country: "IN" }).data).toMatchObject({ phone_e164: "+919876543210" });
+    expect(leadUpdateSchema.parse({ phone_number: "", phone_country: "IN" })).toMatchObject({ phone_e164: null });
+    expect(leadUpdateSchema.safeParse({ phone_number: "12", phone_country: "IN" }).success).toBe(false);
   });
 
   // The MCP create_lead tool calls repo.createLead. A db that throws proves validation
   // happens first: nothing is read or written for an invalid lead.
   const explodingDb = new Proxy({}, { get: () => { throw new Error("database was touched"); } }) as unknown as Db;
-  it("repo.createLead refuses a lead without a valid phone before touching the database", async () => {
-    await expect(createLead(explodingDb, { ...OK_LEAD, phone_number: undefined, source: "claude" })).rejects.toThrow(RepoError);
-    await expect(createLead(explodingDb, { ...OK_LEAD, phone_number: "000", source: "claude" })).rejects.toThrow(/Phone number/);
+  it("repo.createLead refuses an invalid brand before touching the database", async () => {
+    await expect(createLead(explodingDb, { name: "No Profile", source: "claude" })).rejects.toThrow(RepoError);
+    await expect(createLead(explodingDb, { ...OK_BRAND, phone_number: "000", phone_country: "IN", source: "claude" })).rejects.toThrow(/Phone number/);
   });
   it("repo.updateLead rejects an invalid phone before touching the database", async () => {
     await expect(updateLead(explodingDb, "id", { phone_number: "1", phone_country: "IN" })).rejects.toThrow(/Phone number/);
@@ -137,7 +121,7 @@ describe("lead creation rules (forms and MCP share these)", () => {
     expect(contactSchema.safeParse({ email: "nope" }).success).toBe(false);
   });
   it("parses rupee amounts", () => {
-    expect(dealSchema.parse({ kind: "brand", title: "Reel", amount: "₹15,000" }).amount).toBe(15000);
+    expect(dealSchema.parse({ title: "Reel", amount: "₹15,000" }).amount).toBe(15000);
     expect(paymentSchema.safeParse({ amount: "0", paid_on: "2026-11-05" }).success).toBe(false);
   });
 });

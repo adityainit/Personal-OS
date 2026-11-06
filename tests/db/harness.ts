@@ -35,17 +35,14 @@ const SUPABASE_STUB = `
 export const USER_A = "00000000-0000-0000-0000-00000000000a";
 export const USER_B = "00000000-0000-0000-0000-00000000000b";
 
+const MIGRATIONS = join(__dirname, "..", "..", "supabase", "migrations");
+
+/** A fresh database with every migration applied and two users. */
 export async function createDb() {
   const db = new PGlite({ extensions: { pg_trgm } });
   await db.exec(SUPABASE_STUB);
-
-  const dir = join(__dirname, "..", "..", "supabase", "migrations");
-  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
-    const sql = readFileSync(join(dir, file), "utf8").replace(
-      /create extension if not exists pg_cron;/g,
-      "",
-    );
-    await db.exec(sql);
+  for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort()) {
+    await db.exec(readFileSync(join(MIGRATIONS, file), "utf8").replace(/create extension if not exists pg_cron;/g, ""));
   }
 
   await db.exec(`insert into private.allowed_emails values ('a@example.com'), ('b@example.com');

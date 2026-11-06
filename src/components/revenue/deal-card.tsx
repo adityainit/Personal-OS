@@ -8,7 +8,6 @@ import {
   updateDealAction,
 } from "@/actions";
 import { ActionForm } from "@/components/ui/action-form";
-import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { ActionButton } from "@/components/ui/misc";
 import type { DealWithPayments } from "@/lib/domain/repo";
@@ -28,7 +27,7 @@ export function DealCard({
   showClient = true,
 }: {
   deal: DealWithPayments;
-  leads?: Pick<Lead, "id" | "name" | "kind">[];
+  leads?: Pick<Lead, "id" | "name">[];
   showClient?: boolean;
 }) {
   const received = deal.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -44,7 +43,6 @@ export function DealCard({
             <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium capitalize", STATUS_TONE[deal.status])}>
               {deal.status}
             </span>
-            <Badge>{deal.kind === "brand" ? "Brand" : "Freelance"}</Badge>
           </div>
           {showClient ? (
             <p className="mt-0.5 text-xs text-muted">
@@ -78,7 +76,7 @@ export function DealCard({
               <DealFields
                 deal={deal}
                 leads={leads}
-                fixedLead={!leads && deal.lead_id ? { id: deal.lead_id, kind: deal.kind, name: deal.client_name } : undefined}
+                fixedLead={!leads && deal.lead_id ? { id: deal.lead_id, name: deal.client_name } : undefined}
               />
             </ActionForm>
           </Dialog>

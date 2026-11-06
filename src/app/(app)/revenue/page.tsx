@@ -1,9 +1,8 @@
-import { Briefcase, Download, IndianRupee, Plus, Target, TrendingUp, Wallet } from "lucide-react";
+import { Download, IndianRupee, Plus, Target, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import { createDealAction } from "@/actions";
 import { HBarChart, MonthlyRevenueChart } from "@/components/charts/charts";
 import { RangeFilter } from "@/components/charts/range-filter";
-import { InstagramIcon } from "@/components/icons";
 import { DealCard } from "@/components/revenue/deal-card";
 import { DealFields } from "@/components/revenue/deal-forms";
 import { ActionForm } from "@/components/ui/action-form";
@@ -27,7 +26,7 @@ export default async function RevenuePage({ searchParams }: PageProps<"/revenue"
     listDeals(supabase, { status: dealStatus }),
     listLeads(supabase, { sort: "name", limit: 1000 }),
   ]);
-  const leadOptions = leads.map((l) => ({ id: l.id, name: l.name, kind: l.kind }));
+  const leadOptions = leads.map((l) => ({ id: l.id, name: l.name }));
   const rangeParams: Record<string, string> =
     range.key === "custom" ? { from: range.from ?? "", to: range.to ?? "" } : { range: range.key };
 
@@ -44,7 +43,7 @@ export default async function RevenuePage({ searchParams }: PageProps<"/revenue"
             <a href="/api/export?type=payments" className={buttonClass("secondary")}>
               <Download /> Payments CSV
             </a>
-            <Dialog trigger={<><Plus /> Add deal</>} title="Add deal / income" wide description="Brand collaboration or freelance project.">
+            <Dialog trigger={<><Plus /> Add deal</>} title="Add deal / income" wide description="A brand collaboration or sponsorship.">
               <ActionForm action={createDealAction}>
                 <DealFields leads={leadOptions} />
               </ActionForm>
@@ -54,10 +53,8 @@ export default async function RevenuePage({ searchParams }: PageProps<"/revenue"
       />
       <RangeFilter base="/revenue" range={range} extra={dealStatus ? { deals: dealStatus } : {}} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatTile label="Received" hint={range.label} value={money(summary.total_received, true)} icon={<IndianRupee />} tone="success" />
-        <StatTile label="Brand income" value={money(summary.brand_received, true)} icon={<InstagramIcon />} />
-        <StatTile label="Freelance income" value={money(summary.freelance_received, true)} icon={<Briefcase />} />
         <StatTile label="Pending payments" hint="Won deals, not fully paid" value={money(summary.pending_payments, true)} icon={<Wallet />} tone="warning" />
         <StatTile label="Expected" hint="From active deals" value={money(summary.expected_from_active, true)} icon={<Target />} tone="accent" />
         <StatTile label="Deals won" hint={`Value closed · ${range.label.toLowerCase()}`} value={money(summary.won_deal_value, true)} icon={<TrendingUp />} />
@@ -79,9 +76,6 @@ export default async function RevenuePage({ searchParams }: PageProps<"/revenue"
               data={summary.by_client.slice(0, 8).map((c) => ({
                 name: c.client.length > 14 ? c.client.slice(0, 13) + "…" : c.client,
                 value: Number(c.received),
-                note: c.kind === "brand" ? "Brand" : "Freelance",
-                // Same colours as the monthly chart: brand = chart-1, freelance = chart-2.
-                color: c.kind === "brand" ? "var(--chart-1)" : "var(--chart-2)",
               }))}
             />
           </div>

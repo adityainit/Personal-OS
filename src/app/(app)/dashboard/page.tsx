@@ -1,13 +1,13 @@
 import {
   ArrowRight,
   Bot,
-  Briefcase,
   CalendarClock,
   CircleCheck,
   CircleX,
   Handshake,
   IndianRupee,
   MessageCircle,
+  Percent,
   Send,
   Sparkles,
   Target,
@@ -66,14 +66,13 @@ function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: 
 
 export default async function DashboardPage() {
   const { supabase } = await requireUser();
-  const [stats, brandF, freeF, overdue, today, activity, top] = await Promise.all([
+  const [stats, funnel, overdue, today, activity, top] = await Promise.all([
     dashboardStats(supabase),
-    pipelineFunnel(supabase, "brand"),
-    pipelineFunnel(supabase, "freelance"),
+    pipelineFunnel(supabase),
     listFollowUps(supabase, { range: "overdue", limit: 10 }),
     listFollowUps(supabase, { range: "today", limit: 10 }),
     listActivities(supabase, { limit: 12 }),
-    topOpportunities(supabase, undefined, 5),
+    topOpportunities(supabase, 5),
   ]);
   const due = [...overdue, ...today];
   const hour = new Date().toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" });
@@ -92,10 +91,10 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Brands" value={num(stats.total_brands)} icon={<InstagramIcon />} href="/brands" />
-        <StatTile label="Freelance leads" value={num(stats.total_freelance)} icon={<Briefcase />} href="/freelance" />
         <StatTile label="New (7 days)" value={num(stats.new_leads_7d)} icon={<Sparkles />} tone="accent" />
         <StatTile label="Messages sent" value={num(stats.messages_sent)} icon={<Send />} />
         <StatTile label="Replies" value={num(stats.replies_received)} icon={<MessageCircle />} />
+        <StatTile label="Reply rate" value={pct(funnel.reply_rate)} hint="Brands that replied after you messaged" icon={<Percent />} />
         <StatTile label="Interested" value={num(stats.interested)} icon={<Target />} tone="warning" />
         <StatTile
           label="Follow-ups due"
@@ -167,7 +166,7 @@ export default async function DashboardPage() {
                   <Link href={`/leads/${l.id}`} className="flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-surface-2/60">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{l.name}</p>
-                      <p className="truncate text-[11px] text-muted">{l.kind === "brand" ? "Brand" : "Freelance"} · {l.suggested_service ?? l.industry ?? "—"}</p>
+                      <p className="truncate text-[11px] text-muted">{l.suggested_service ?? l.industry ?? "—"}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <StatusBadge status={l.status} />
@@ -182,9 +181,8 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <MiniFunnel title="Brand pipeline" href="/brands" f={brandF} icon={<InstagramIcon className="size-4" />} />
-        <MiniFunnel title="Freelance pipeline" href="/freelance" f={freeF} icon={<Briefcase className="size-4" />} />
-        <Card>
+        <MiniFunnel title="Brand pipeline" href="/brands" f={funnel} icon={<InstagramIcon className="size-4" />} />
+        <Card className="lg:col-span-2">
           <CardHeader
             title="Recent activity"
             action={

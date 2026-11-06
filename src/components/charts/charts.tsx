@@ -20,19 +20,6 @@ function monthLabel(m: string) {
   return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-IN", { month: "short", year: "2-digit", timeZone: "UTC" });
 }
 
-function Legend({ items }: { items: { label: string; color: string }[] }) {
-  return (
-    <ul className="mb-3 flex flex-wrap gap-4 text-xs text-muted">
-      {items.map((i) => (
-        <li key={i.label} className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm" style={{ background: i.color }} />
-          {i.label}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function TooltipBox({ title, rows }: { title: string; rows: { label: string; value: string; color?: string }[] }) {
   return (
     <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-lg">
@@ -49,12 +36,10 @@ function TooltipBox({ title, rows }: { title: string; rows: { label: string; val
 }
 
 // ---------------------------------------------------------------------------
-// Monthly revenue: stacked bars, brand + freelance (2 series, fixed hue order)
+// Monthly revenue: one series (brand collaborations), so no legend box
 // ---------------------------------------------------------------------------
 export interface MonthPoint {
   month: string;
-  brand: number;
-  freelance: number;
   total: number;
 }
 
@@ -70,7 +55,7 @@ function fillMonths(data: MonthPoint[], from?: string | null, to?: string | null
   for (let i = 0; i < 120; i++) {
     const key = `${y}-${String(m).padStart(2, "0")}`;
     if (key > end) break;
-    out.push(byMonth.get(key) ?? { month: key, brand: 0, freelance: 0, total: 0 });
+    out.push(byMonth.get(key) ?? { month: key, total: 0 });
     m += 1;
     if (m > 12) {
       m = 1;
@@ -95,19 +80,11 @@ export function MonthlyRevenueChart({
   const rows = fillMonths(data, from, to).map((d) => ({
     ...d,
     label: monthLabel(d.month),
-    brand: Number(d.brand),
-    freelance: Number(d.freelance),
     total: Number(d.total),
   }));
   return (
     <div>
-      <Legend
-        items={[
-          { label: "Brand collaborations", color: "var(--chart-1)" },
-          { label: "Freelance projects", color: "var(--chart-2)" },
-        ]}
-      />
-      <div style={{ height }} role="img" aria-label="Monthly revenue received, brand and freelance, stacked">
+      <div style={{ height }} role="img" aria-label="Monthly revenue received from brand collaborations">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows} margin={{ top: 4, right: 4, left: 4, bottom: 0 }} barCategoryGap="28%">
             <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
@@ -119,17 +96,12 @@ export function MonthlyRevenueChart({
                 p.active && p.payload?.length ? (
                   <TooltipBox
                     title={String(p.label)}
-                    rows={[
-                      { label: "Brand", value: money(p.payload[0]?.payload.brand), color: "var(--chart-1)" },
-                      { label: "Freelance", value: money(p.payload[0]?.payload.freelance), color: "var(--chart-2)" },
-                      { label: "Total", value: money(p.payload[0]?.payload.total) },
-                    ]}
+                    rows={[{ label: "Received", value: money(p.payload[0]?.payload.total), color: "var(--chart-1)" }]}
                   />
                 ) : null
               }
             />
-            <Bar dataKey="brand" stackId="r" fill="var(--chart-1)" stroke="var(--surface)" strokeWidth={2} maxBarSize={36} />
-            <Bar dataKey="freelance" stackId="r" fill="var(--chart-2)" stroke="var(--surface)" strokeWidth={2} radius={[4, 4, 0, 0]} maxBarSize={36} />
+            <Bar dataKey="total" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={36} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -139,17 +111,13 @@ export function MonthlyRevenueChart({
           <thead>
             <tr className="text-left text-muted">
               <th className="py-1 font-medium">Month</th>
-              <th className="py-1 text-right font-medium">Brand</th>
-              <th className="py-1 text-right font-medium">Freelance</th>
-              <th className="py-1 text-right font-medium">Total</th>
+              <th className="py-1 text-right font-medium">Received</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.month} className="border-t border-border">
                 <td className="py-1">{r.label}</td>
-                <td className="py-1 text-right tabular-nums">{money(r.brand)}</td>
-                <td className="py-1 text-right tabular-nums">{money(r.freelance)}</td>
                 <td className="py-1 text-right font-medium tabular-nums">{money(r.total)}</td>
               </tr>
             ))}

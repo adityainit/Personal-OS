@@ -1,4 +1,4 @@
-import { Briefcase, CalendarClock, MessageCircle, Phone } from "lucide-react";
+import { CalendarClock } from "lucide-react";
 import Link from "next/link";
 import { InstagramIcon } from "@/components/icons";
 import { ButtonLink } from "@/components/ui/button";
@@ -6,39 +6,24 @@ import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { getSettings, listFollowUps, type FollowUpWithLead } from "@/lib/domain/repo";
-import { describeRules, rulesFor, type LeadKind } from "@/lib/domain/types";
+import { describeRules, followUpRules } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
-import { cn, instagramUrl } from "@/lib/utils";
+import { instagramUrl } from "@/lib/utils";
 import { FollowUpRow } from "../leads/[id]/sections";
 
-const TABS: [LeadKind | "", string][] = [
-  ["", "All"],
-  ["brand", "Brand deals"],
-  ["freelance", "Freelancing"],
-];
-
-/** Quick links to where you'd follow up yourself: Instagram for brands, phone/WhatsApp for clients. */
+/** Quick link to where you'd follow up yourself. */
 function ReachOut({ lead }: { lead: FollowUpWithLead["lead"] }) {
-  const link = "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-2 hover:text-fg";
-  if (lead.kind === "brand") {
-    const ig = instagramUrl(lead.instagram_handle);
-    return ig ? (
-      <a href={ig} target="_blank" rel="noopener noreferrer" className={link}>
-        <InstagramIcon className="size-3" /> Open Instagram
-      </a>
-    ) : null;
-  }
-  if (!lead.phone_e164) return null;
-  return (
-    <span className="flex gap-1">
-      <a href={`tel:${lead.phone_e164}`} className={link}>
-        <Phone className="size-3" /> Call
-      </a>
-      <a href={`https://wa.me/${lead.phone_e164.replace(/^\+/, "")}`} target="_blank" rel="noopener noreferrer" className={link}>
-        <MessageCircle className="size-3" /> WhatsApp
-      </a>
-    </span>
-  );
+  const ig = instagramUrl(lead.instagram_handle);
+  return ig ? (
+    <a
+      href={ig}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-2 hover:text-fg"
+    >
+      <InstagramIcon className="size-3" /> Open Instagram
+    </a>
+  ) : null;
 }
 
 function Group({ title, description, items, tone }: { title: string; description: string; items: FollowUpWithLead[]; tone?: string }) {
@@ -61,11 +46,7 @@ function Group({ title, description, items, tone }: { title: string; description
             <li key={f.id} className="flex flex-col gap-1.5 px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <Link href={`/leads/${f.lead.id}?tab=outreach`} className="flex min-w-0 items-center gap-1.5 text-sm font-medium hover:text-accent">
-                  {f.lead.kind === "brand" ? (
-                    <InstagramIcon className="size-3.5 shrink-0 text-muted" />
-                  ) : (
-                    <Briefcase className="size-3.5 shrink-0 text-muted" />
-                  )}
+                  <InstagramIcon className="size-3.5 shrink-0 text-muted" />
                   <span className="truncate">{f.lead.name}</span>
                 </Link>
                 <StatusBadge status={f.lead.status} />
@@ -80,19 +61,16 @@ function Group({ title, description, items, tone }: { title: string; description
   );
 }
 
-export default async function FollowUpsPage({ searchParams }: PageProps<"/follow-ups">) {
-  const sp = await searchParams;
-  const kind = sp.kind === "brand" || sp.kind === "freelance" ? (sp.kind as LeadKind) : undefined;
+export default async function FollowUpsPage() {
   const { supabase } = await requireUser();
   const [overdue, today, upcoming, settings] = await Promise.all([
-    listFollowUps(supabase, { range: "overdue", kind }),
-    listFollowUps(supabase, { range: "today", kind }),
-    listFollowUps(supabase, { range: "upcoming", kind }),
+    listFollowUps(supabase, { range: "overdue" }),
+    listFollowUps(supabase, { range: "today" }),
+    listFollowUps(supabase, { range: "upcoming" }),
     getSettings(supabase),
   ]);
   const total = overdue.length + today.length + upcoming.length;
-  const brandRules = describeRules(rulesFor(settings, "brand"));
-  const freelanceRules = describeRules(rulesFor(settings, "freelance"));
+  const rules = describeRules(followUpRules(settings));
 
   return (
     <>
@@ -106,35 +84,12 @@ export default async function FollowUpsPage({ searchParams }: PageProps<"/follow
         }
       />
 
-      <div className="mb-4 grid gap-2 text-xs sm:grid-cols-2">
-        <p className="flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-muted">
-          <InstagramIcon className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            <span className="font-medium text-fg">Brand deals (Instagram DM):</span> {brandRules}.
-          </span>
-        </p>
-        <p className="flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-muted">
-          <Briefcase className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            <span className="font-medium text-fg">Freelancing:</span> {freelanceRules}.
-          </span>
-        </p>
-      </div>
-
-      <nav className="mb-4 flex w-fit rounded-lg border border-border p-0.5 text-sm" aria-label="Filter follow-ups">
-        {TABS.map(([k, label]) => (
-          <Link
-            key={k || "all"}
-            href={k ? `/follow-ups?kind=${k}` : "/follow-ups"}
-            className={cn(
-              "rounded-md px-3 py-1",
-              (kind ?? "") === k ? "bg-surface-2 font-medium text-fg" : "text-muted hover:text-fg",
-            )}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <p className="mb-4 flex w-fit items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-muted">
+        <InstagramIcon className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          <span className="font-medium text-fg">Follow-up rules:</span> {rules}.
+        </span>
+      </p>
 
       {total === 0 ? (
         <Card>

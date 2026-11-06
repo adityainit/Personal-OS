@@ -6,7 +6,6 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { searchAction, type SearchHit } from "@/actions/search";
 import { StatusBadge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/misc";
-import { KIND_LABEL } from "@/lib/domain/constants";
 import { cn } from "@/lib/utils";
 
 /** Global search (Ctrl/⌘ + K) over leads and contacts. */
@@ -110,7 +109,7 @@ export function GlobalSearch() {
               >
                 <span className="flex-1 truncate font-medium">{h.name}</span>
                 <span className="text-[11px] text-muted">
-                  {KIND_LABEL[h.kind]} · {h.matched_on}
+                  matched on {h.matched_on}
                 </span>
                 <StatusBadge status={h.status} />
               </button>

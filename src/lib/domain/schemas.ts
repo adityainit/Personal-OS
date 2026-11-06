@@ -69,7 +69,6 @@ const optDate = z
   .transform((v) => (v ? v : null))
   .refine((v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), "Use YYYY-MM-DD");
 
-export const leadKind = z.enum(["brand", "freelance"]);
 export const leadStatus = z.enum(LEAD_STATUSES as [string, ...string[]]);
 export const channel = z.enum(CHANNELS as [string, ...string[]]);
 
@@ -100,34 +99,25 @@ const phoneFields = {
 
 export const leadFields = { ...leadDetailFields, ...phoneFields };
 
-export const NEEDS_PROFILE = "Add a website or a social profile (Instagram or LinkedIn)";
 export const NEEDS_BRAND_PROFILE = "Add the brand's Instagram handle or website";
 
 /**
- * New leads.
- *  - Freelance: name, a valid phone number with country code, and a website or profile.
- *  - Instagram brand deal: name and the brand's Instagram handle or website. No phone number
- *    (brand deals happen over DM / email); one that is given is still validated.
+ * New brand leads: name and the brand's Instagram handle or website. No phone number is
+ * needed (brand deals happen over DM / email); one that is given is still validated.
  */
 export const leadCreateSchema = z
   .object({
-    kind: leadKind,
     ...leadFields,
     status: leadStatus.optional(),
     source: z.enum(["claude", "manual"]).optional(),
   })
   .transform((d, ctx) => {
     const { phone_number, phone_country, ...rest } = d;
-    if (d.kind === "brand") {
-      if (!d.instagram_handle && !d.website) {
-        ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
-        return z.NEVER;
-      }
-      if (!phone_number) return { ...rest, phone_e164: null, phone_country: null };
-    } else if (!d.website && !d.instagram_handle && !d.linkedin_url) {
-      ctx.addIssue({ code: "custom", path: ["website"], message: NEEDS_PROFILE });
+    if (!d.instagram_handle && !d.website) {
+      ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
       return z.NEVER;
     }
+    if (!phone_number) return { ...rest, phone_e164: null, phone_country: null };
     const phone = validatePhone(phone_number, phone_country);
     if (!phone.ok) {
       ctx.addIssue({ code: "custom", path: ["phone_number"], message: phone.error });
@@ -138,7 +128,7 @@ export const leadCreateSchema = z
 
 /**
  * Edits: a phone number is validated whenever it is supplied. An empty phone becomes
- * `phone_e164: null`; the repository only allows that for brand leads.
+ * `phone_e164: null`.
  */
 export const leadUpdateSchema = z
   .object(leadFields)
@@ -158,14 +148,6 @@ export const leadUpdateSchema = z
     }
     return { ...rest, phone_e164: phone.e164 as string | null, phone_country: phone.country as string | null };
   });
-
-/** Researched businesses without a verified phone number. Never part of the pipeline. */
-export const prospectSchema = z.object({
-  kind: leadKind,
-  ...leadDetailFields,
-  missing: optText(300),
-  source: z.enum(["claude", "manual"]).optional(),
-});
 
 export const contactSchema = z
   .object({
@@ -204,7 +186,6 @@ export const followUpSchema = z.object({
 export const dealSchema = z.object({
   lead_id: z.uuid().nullish(),
   client_name: optText(200),
-  kind: leadKind,
   title: z.string().trim().min(1, "Title is required").max(300),
   amount: money,
   status: z.enum(DEAL_STATUSES as [string, ...string[]]).default("active"),
@@ -234,19 +215,15 @@ export const creatorProfileSchema = z.object({
   content_style: optText(2000),
   past_collaborations: optText(5000),
   rates: optText(2000),
-  freelance_skills: optText(5000),
   portfolio_url: optUrl,
   bio: optText(5000),
 });
 
-/** Separate follow-up timing for Instagram brand deals and freelance clients. */
+/** Follow-up timing for brand outreach. */
 export const followUpRulesSchema = z.object({
-  brand_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
-  brand_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
-  brand_max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
-  freelance_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 2),
-  freelance_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 3),
-  freelance_max_follow_ups: optInt(0, 20).transform((v) => v ?? 3),
+  default_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
+  follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
+  max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
 });
 
 /** Strip null values so creator profile JSON stays tidy. */

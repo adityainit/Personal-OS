@@ -3,7 +3,6 @@
 import {
   Activity,
   Bot,
-  Briefcase,
   CalendarClock,
   ChartColumn,
   IndianRupee,
@@ -22,7 +21,6 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/brands", label: "Brand Deals", icon: InstagramIcon },
-  { href: "/freelance", label: "Freelancing", icon: Briefcase },
   { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, badge: "followUps" as const },
   { href: "/revenue", label: "Revenue", icon: IndianRupee },
   { href: "/reports", label: "Reports", icon: ChartColumn },
@@ -35,7 +33,7 @@ function NavLinks({ dueCount, onNavigate }: { dueCount: number; onNavigate?: () 
   const isActive = (href: string) =>
     pathname === href ||
     pathname.startsWith(href + "/") ||
-    (href === "/brands" && pathname.startsWith("/leads/") && pathname.includes("kind=brand"));
+    (href === "/brands" && pathname.startsWith("/leads/"));
   return (
     <nav className="flex flex-col gap-0.5">
       {NAV.map(({ href, label, icon: Icon, badge }) => (

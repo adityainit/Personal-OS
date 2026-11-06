@@ -10,7 +10,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "Personal OS",
   applicationName: "Personal OS",
-  description: "Personal OS: a private CRM for brand deals, freelancing and revenue.",
+  description: "Personal OS: a private CRM for Instagram brand deals and revenue.",
   robots: { index: false, follow: false },
 };
 

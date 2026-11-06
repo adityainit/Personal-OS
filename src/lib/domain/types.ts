@@ -1,4 +1,3 @@
-export type LeadKind = "brand" | "freelance";
 export type LeadStatus =
   | "new"
   | "researched"
@@ -20,7 +19,6 @@ export type Actor = "me" | "claude" | "system";
 
 export interface Lead {
   id: string;
-  kind: LeadKind;
   name: string;
   website: string | null;
   domain_normalized: string | null;
@@ -42,32 +40,6 @@ export interface Lead {
   tags: string[];
   source: LeadSource;
   last_contacted_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface IncompleteProspect {
-  id: string;
-  kind: LeadKind;
-  name: string;
-  website: string | null;
-  domain_normalized: string | null;
-  instagram_handle: string | null;
-  linkedin_url: string | null;
-  email: string | null;
-  contact_person: string | null;
-  industry: string | null;
-  location: string | null;
-  company_size: string | null;
-  description: string | null;
-  research: string | null;
-  opportunity: string | null;
-  why_fit: string | null;
-  suggested_service: string | null;
-  fit_score: number | null;
-  tags: string[];
-  missing: string;
-  source: LeadSource;
   created_at: string;
   updated_at: string;
 }
@@ -124,7 +96,6 @@ export interface Deal {
   id: string;
   lead_id: string | null;
   client_name: string;
-  kind: LeadKind;
   title: string;
   amount: number;
   status: DealStatus;
@@ -166,7 +137,6 @@ export interface CreatorProfile {
   content_style?: string;
   past_collaborations?: string;
   rates?: string;
-  freelance_skills?: string;
   portfolio_url?: string;
   bio?: string;
 }
@@ -174,16 +144,9 @@ export interface CreatorProfile {
 export interface Settings {
   owner_id: string;
   creator_profile: CreatorProfile;
-  /** Legacy shared rules (kept for older rows); the per-kind columns below are used. */
   default_follow_up_days: number;
   follow_up_gap_days: number;
   max_follow_ups: number;
-  brand_first_follow_up_days: number;
-  brand_follow_up_gap_days: number;
-  brand_max_follow_ups: number;
-  freelance_first_follow_up_days: number;
-  freelance_follow_up_gap_days: number;
-  freelance_max_follow_ups: number;
   currency: string;
 }
 
@@ -193,22 +156,12 @@ export interface FollowUpRules {
   max: number;
 }
 
-/**
- * Follow-up rules for one kind of lead. Falls back to sensible defaults when the
- * per-kind columns don't exist yet (database migration 4 not applied).
- */
-export function rulesFor(s: Partial<Settings> | null | undefined, kind: LeadKind): FollowUpRules {
-  if (kind === "brand") {
-    return {
-      first: s?.brand_first_follow_up_days ?? 3,
-      gap: s?.brand_follow_up_gap_days ?? 4,
-      max: s?.brand_max_follow_ups ?? 2,
-    };
-  }
+/** The follow-up rules saved in Settings. */
+export function followUpRules(s: Partial<Settings> | null | undefined): FollowUpRules {
   return {
-    first: s?.freelance_first_follow_up_days ?? s?.default_follow_up_days ?? 2,
-    gap: s?.freelance_follow_up_gap_days ?? s?.follow_up_gap_days ?? 3,
-    max: s?.freelance_max_follow_ups ?? s?.max_follow_ups ?? 3,
+    first: s?.default_follow_up_days ?? 3,
+    gap: s?.follow_up_gap_days ?? 4,
+    max: s?.max_follow_ups ?? 2,
   };
 }
 
@@ -221,7 +174,6 @@ export function describeRules(r: FollowUpRules) {
 
 export interface DashboardStats {
   total_brands: number;
-  total_freelance: number;
   new_leads_7d: number;
   messages_sent: number;
   replies_received: number;
@@ -251,11 +203,9 @@ export interface Funnel {
 
 export interface RevenueSummary {
   total_received: number;
-  brand_received: number;
-  freelance_received: number;
   pending_payments: number;
   expected_from_active: number;
   won_deal_value: number;
-  monthly: { month: string; brand: number; freelance: number; total: number }[];
-  by_client: { client: string; lead_id: string | null; kind: LeadKind; received: number }[];
+  monthly: { month: string; total: number }[];
+  by_client: { client: string; lead_id: string | null; received: number }[];
 }

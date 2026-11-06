@@ -9,7 +9,6 @@ grant usage on schema private to authenticated;
 -- ---------------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------------
-create type public.lead_kind as enum ('brand', 'freelance');
 create type public.lead_status as enum (
   'new', 'researched', 'drafted', 'contacted', 'replied',
   'interested', 'negotiating', 'won', 'lost', 'do_not_contact'
@@ -52,25 +51,27 @@ grant execute on function private.normalize_handle(text) to authenticated;
 create table public.settings (
   owner_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
   creator_profile jsonb not null default '{}'::jsonb,
-  default_follow_up_days integer not null default 1 check (default_follow_up_days between 0 and 90),
-  follow_up_gap_days integer not null default 3 check (follow_up_gap_days between 1 and 90),
-  max_follow_ups integer not null default 3 check (max_follow_ups between 0 and 20),
+  default_follow_up_days integer not null default 3 check (default_follow_up_days between 0 and 90),
+  follow_up_gap_days integer not null default 4 check (follow_up_gap_days between 1 and 90),
+  max_follow_ups integer not null default 2 check (max_follow_ups between 0 and 20),
   currency text not null default 'INR',
   updated_at timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
--- Leads (brands + freelance prospects)
+-- Leads (Instagram brands)
 -- ---------------------------------------------------------------------------
 create table public.leads (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  kind public.lead_kind not null,
   name text not null check (length(btrim(name)) > 0),
   website text,
   domain_normalized text generated always as (private.normalize_domain(website)) stored,
   instagram_handle text,
   instagram_handle_normalized text generated always as (private.normalize_handle(instagram_handle)) stored,
+  linkedin_url text,
+  phone_e164 text,
+  phone_country text,
   industry text,
   location text,
   company_size text,
@@ -89,11 +90,12 @@ create table public.leads (
   unique (id, owner_id)
 );
 
-create unique index leads_unique_domain on public.leads (owner_id, kind, domain_normalized)
+create unique index leads_unique_domain on public.leads (owner_id, domain_normalized)
   where domain_normalized is not null;
-create unique index leads_unique_handle on public.leads (owner_id, kind, instagram_handle_normalized)
+create unique index leads_unique_handle on public.leads (owner_id, instagram_handle_normalized)
   where instagram_handle_normalized is not null;
-create index leads_owner_kind_status on public.leads (owner_id, kind, status);
+create index leads_owner_status on public.leads (owner_id, status);
+create index leads_phone on public.leads (owner_id, phone_e164) where phone_e164 is not null;
 create index leads_name_trgm on public.leads using gin (name extensions.gin_trgm_ops);
 
 -- ---------------------------------------------------------------------------
@@ -182,7 +184,6 @@ create table public.deals (
   owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   lead_id uuid,
   client_name text not null default '',
-  kind public.lead_kind not null,
   title text not null check (length(btrim(title)) > 0),
   amount numeric(14, 2) not null default 0 check (amount >= 0),
   status public.deal_status not null default 'active',

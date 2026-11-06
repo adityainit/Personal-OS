@@ -15,8 +15,7 @@ import { toast } from "sonner";
 import { setLeadStatusAction } from "@/actions";
 import { FitScore, StatusBadge } from "@/components/ui/badge";
 import { LEAD_STATUSES, STATUS_LABEL, STATUS_TONE } from "@/lib/domain/constants";
-import { formatPhone } from "@/lib/domain/phone";
-import type { Lead, LeadKind, LeadStatus } from "@/lib/domain/types";
+import type { Lead, LeadStatus } from "@/lib/domain/types";
 import { cn, instagramUrl, relative } from "@/lib/utils";
 
 const col = createColumnHelper<Lead>();
@@ -49,19 +48,6 @@ function StatusSelect({ lead }: { lead: Lead }) {
   );
 }
 
-const phoneColumn = col.accessor("phone_e164", {
-  header: "Phone",
-  cell: (c) =>
-    c.getValue() ? (
-      <a href={`tel:${c.getValue()}`} className="whitespace-nowrap text-xs tabular-nums hover:text-accent hover:underline">
-        {formatPhone(c.getValue())}
-      </a>
-    ) : (
-      <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-medium text-warning">Missing</span>
-    ),
-  sortUndefined: "last",
-});
-
 const instagramColumn = col.accessor("instagram_handle_normalized", {
   header: "Instagram",
   cell: (c) =>
@@ -80,7 +66,7 @@ const instagramColumn = col.accessor("instagram_handle_normalized", {
   sortUndefined: "last",
 });
 
-const baseColumns = [
+const columns = [
   col.accessor("name", {
     header: "Name",
     cell: (c) => (
@@ -96,7 +82,7 @@ const baseColumns = [
       </div>
     ),
   }),
-  "CONTACT",
+  instagramColumn,
   col.accessor("industry", { header: "Industry", cell: (c) => <span className="text-muted">{c.getValue() ?? "—"}</span> }),
   col.accessor("status", {
     header: "Status",
@@ -134,14 +120,7 @@ const baseColumns = [
   }),
 ];
 
-// Brand deals are reached on Instagram; freelance clients by phone.
-const COLUMNS = {
-  brand: baseColumns.map((c) => (c === "CONTACT" ? instagramColumn : c)),
-  freelance: baseColumns.map((c) => (c === "CONTACT" ? phoneColumn : c)),
-} as unknown as Record<LeadKind, typeof phoneColumn[]>;
-
-export function LeadsTable({ leads, kind }: { leads: Lead[]; kind: LeadKind }) {
-  const columns = COLUMNS[kind];
+export function LeadsTable({ leads }: { leads: Lead[] }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -207,9 +186,7 @@ export function LeadsTable({ leads, kind }: { leads: Lead[]; kind: LeadKind }) {
                 <StatusBadge status={l.status} />
               </div>
               <p className="line-clamp-1 text-xs text-muted">{l.suggested_service ?? l.industry ?? l.domain_normalized ?? "—"}</p>
-              {kind === "freelance" ? (
-                <p className="text-xs text-muted">{formatPhone(l.phone_e164) ?? <span className="font-medium text-warning">No phone number</span>}</p>
-              ) : l.instagram_handle_normalized ? (
+              {l.instagram_handle_normalized ? (
                 <p className="text-xs text-muted">@{l.instagram_handle_normalized}</p>
               ) : null}
               <div className="flex items-center justify-between">

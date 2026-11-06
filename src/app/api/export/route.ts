@@ -47,9 +47,7 @@ export async function GET(req: NextRequest) {
         return file(JSON.stringify(backup, null, 2), `personal-os-backup-${stamp}.json`, "application/json");
       }
       case "leads": {
-        const kind = sp.get("kind");
-        let rows = await all(supabase, "leads");
-        if (kind === "brand" || kind === "freelance") rows = rows.filter((r) => r.kind === kind);
+        const rows = await all(supabase, "leads");
         const contacts = await all(supabase, "contacts");
         const byLead = new Map<string, string[]>();
         for (const c of contacts) {
@@ -58,11 +56,11 @@ export async function GET(req: NextRequest) {
         }
         const out = rows.map((r) => ({ ...r, contacts: byLead.get(r.id as string)?.join("; ") ?? "" }));
         const cols = [
-          "name", "kind", "status", "phone_e164", "fit_score", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
+          "name", "status", "fit_score", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
           "suggested_service", "opportunity", "why_fit", "description", "research", "contacts", "tags", "source",
           "last_contacted_at", "created_at", "updated_at", "id",
         ];
-        return file(toCsv(out, cols), `${kind ?? "all"}-leads-${stamp}.csv`, "text/csv");
+        return file(toCsv(out, cols), `brand-leads-${stamp}.csv`, "text/csv");
       }
       case "deals": {
         const deals = await all(supabase, "deals", "*, payments(amount)");
@@ -72,19 +70,19 @@ export async function GET(req: NextRequest) {
           void _omit;
           return { ...rest, received, pending: Math.max(Number(d.amount) - received, 0) };
         });
-        const cols = ["client_name", "kind", "title", "amount", "received", "pending", "status", "expected_date", "payment_due_date", "closed_at", "details", "created_at", "id", "lead_id"];
+        const cols = ["client_name", "title", "amount", "received", "pending", "status", "expected_date", "payment_due_date", "closed_at", "details", "created_at", "id", "lead_id"];
         return file(toCsv(out, cols), `deals-${stamp}.csv`, "text/csv");
       }
       case "payments": {
-        const rows = await all(supabase, "payments", "*, deal:deals(title, client_name, kind)");
+        const rows = await all(supabase, "payments", "*, deal:deals(title, client_name)");
         const out = rows.map((p) => {
-          const deal = p.deal as { title: string; client_name: string; kind: string } | null;
-          return { paid_on: p.paid_on, amount: p.amount, client: deal?.client_name, deal: deal?.title, source: deal?.kind, method: p.method, note: p.note, id: p.id };
+          const deal = p.deal as { title: string; client_name: string } | null;
+          return { paid_on: p.paid_on, amount: p.amount, client: deal?.client_name, deal: deal?.title, method: p.method, note: p.note, id: p.id };
         });
         return file(toCsv(out), `payments-${stamp}.csv`, "text/csv");
       }
       case "follow_ups": {
-        const rows = await all(supabase, "follow_ups", "*, lead:leads(name, kind)");
+        const rows = await all(supabase, "follow_ups", "*, lead:leads(name)");
         const out = rows.map((f) => ({ ...f, lead: (f.lead as { name: string } | null)?.name }));
         return file(toCsv(out), `follow-ups-${stamp}.csv`, "text/csv");
       }
@@ -95,14 +93,12 @@ export async function GET(req: NextRequest) {
       case "report": {
         const from = sp.get("from") ?? undefined;
         const to = sp.get("to") ?? undefined;
-        const [b, f, r] = await Promise.all([
-          pipelineFunnel(supabase, "brand", from, to),
-          pipelineFunnel(supabase, "freelance", from, to),
+        const [b, r] = await Promise.all([
+          pipelineFunnel(supabase, from, to),
           revenueSummary(supabase, sp.get("dfrom") ?? undefined, sp.get("dto") ?? undefined),
         ]);
         const rows = [
           ...Object.entries(b).map(([k, v]) => ({ section: "brand_deals", metric: k, value: v })),
-          ...Object.entries(f).map(([k, v]) => ({ section: "freelancing", metric: k, value: v })),
           ...Object.entries(r)
             .filter(([, v]) => typeof v !== "object")
             .map(([k, v]) => ({ section: "revenue", metric: k, value: v })),

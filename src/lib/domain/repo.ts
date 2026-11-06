@@ -16,7 +16,6 @@ import {
   leadUpdateSchema,
   outreachSchema,
   paymentSchema,
-  prospectSchema,
 } from "./schemas";
 import type {
   Activity,
@@ -25,10 +24,8 @@ import type {
   Deal,
   FollowUp,
   Funnel,
-  IncompleteProspect,
   Interaction,
   Lead,
-  LeadKind,
   LeadStatus,
   Outreach,
   Payment,
@@ -70,31 +67,26 @@ function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
 // Leads
 // ---------------------------------------------------------------------------
 export interface LeadFilters {
-  kind?: LeadKind;
   status?: LeadStatus | LeadStatus[];
   q?: string;
   minFit?: number;
   tag?: string;
   source?: "claude" | "manual";
-  /** Only leads that have no phone number on record (legacy records). */
-  noPhone?: boolean;
   sort?: "updated" | "created" | "fit" | "name";
   limit?: number;
 }
 
 export async function listLeads(db: Db, f: LeadFilters = {}) {
   let q = db.from("leads").select("*");
-  if (f.kind) q = q.eq("kind", f.kind);
   if (f.status) q = Array.isArray(f.status) ? q.in("status", f.status) : q.eq("status", f.status);
   if (f.minFit !== undefined) q = q.gte("fit_score", f.minFit);
   if (f.tag) q = q.contains("tags", [f.tag.toLowerCase()]);
   if (f.source) q = q.eq("source", f.source);
-  if (f.noPhone) q = q.is("phone_e164", null);
   if (f.q) {
     const term = f.q.replace(/[%,()"'\\*]/g, " ").trim();
     if (term)
       q = q.or(
-        `name.ilike.%${term}%,domain_normalized.ilike.%${term}%,instagram_handle_normalized.ilike.%${term.replace(/^@/, "")}%,industry.ilike.%${term}%,phone_e164.ilike.%${term.replace(/[\s()-]/g, "")}%`,
+        `name.ilike.%${term}%,domain_normalized.ilike.%${term}%,instagram_handle_normalized.ilike.%${term.replace(/^@/, "")}%,industry.ilike.%${term}%`,
       );
   }
   const sort = f.sort ?? "updated";
@@ -136,7 +128,6 @@ export async function getLeadBundle(db: Db, id: string) {
 
 export interface DuplicateMatch {
   id: string;
-  kind: LeadKind;
   name: string;
   status: LeadStatus;
   match_type: "website" | "instagram" | "phone" | "name";
@@ -149,7 +140,6 @@ export async function checkDuplicate(
     name?: string | null;
     website?: string | null;
     instagram?: string | null;
-    kind?: LeadKind | null;
     phone?: string | null;
   },
 ) {
@@ -158,7 +148,6 @@ export async function checkDuplicate(
       p_name: p.name ?? null,
       p_website: p.website ?? null,
       p_instagram: p.instagram ?? null,
-      p_kind: p.kind ?? null,
       p_phone: p.phone ?? null,
     }),
   ) as DuplicateMatch[];
@@ -169,7 +158,7 @@ export async function checkDuplicate(
  * - Same website or Instagram handle: always the same business, so the existing lead is returned.
  * - Same phone number or a very similar name: probably the same business, so it is returned too
  *   unless `allowSimilar` is set (the user confirmed it is a different business).
- * A valid phone number is mandatory (validated here, and again by a database trigger).
+ * A phone number is optional; one that is given is validated here and by a database trigger.
  */
 export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: boolean } = {}) {
   const data = parse(leadCreateSchema, input);
@@ -178,7 +167,6 @@ export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: 
     name: lead.name,
     website: lead.website,
     instagram: lead.instagram_handle,
-    kind: lead.kind as LeadKind,
     phone: lead.phone_e164,
   });
   const exact = dups.find((d) => d.match_type === "website" || d.match_type === "instagram");
@@ -196,102 +184,13 @@ export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: 
   return { lead: created, duplicate: false as const, similar: dups };
 }
 
-const NO_PHONE =
-  "This freelance lead has no phone number yet. Add a valid phone number (with country code) to save other changes.";
-const PHONE_REQUIRED = "Freelance leads need a phone number with country code";
-
 export async function updateLead(db: Db, id: string, input: unknown) {
   const data = parse(leadUpdateSchema, input);
   const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
   if (Object.keys(clean).length === 0) return getLead(db, id);
-  // Status moves are always allowed. Freelance leads need a phone number on record for
-  // any other edit; brand leads never need one.
-  const onlyStatus = Object.keys(clean).every((k) => k === "status");
-  if (!onlyStatus) {
-    const existing = await getLead(db, id);
-    if (existing.kind === "freelance") {
-      if ("phone_e164" in clean && !clean.phone_e164) throw new RepoError(PHONE_REQUIRED, "invalid");
-      if (!("phone_e164" in clean) && !existing.phone_e164) throw new RepoError(NO_PHONE, "invalid");
-    }
-  }
   const lead = check(await db.from("leads").update(clean).eq("id", id).select("*").maybeSingle()) as Lead | null;
   if (!lead) throw new RepoError("Lead not found", "not_found");
   return lead;
-}
-
-// ---------------------------------------------------------------------------
-// Incomplete prospects (researched, but no verified phone number yet)
-// ---------------------------------------------------------------------------
-export async function listProspects(db: Db, kind?: LeadKind) {
-  let q = db.from("incomplete_prospects").select("*").order("created_at", { ascending: false });
-  if (kind) q = q.eq("kind", kind);
-  return check(await q.limit(200)) as IncompleteProspect[];
-}
-
-export async function saveProspect(db: Db, input: unknown) {
-  const data = parse(prospectSchema, input);
-  const dups = await checkDuplicate(db, {
-    name: data.name,
-    website: data.website,
-    instagram: data.instagram_handle,
-    kind: data.kind as LeadKind,
-  });
-  const exact = dups.find((d) => d.match_type === "website" || d.match_type === "instagram");
-  if (exact) return { prospect: null, duplicateLead: await getLead(db, exact.id) };
-  const prospect = check(
-    await db
-      .from("incomplete_prospects")
-      .insert({ ...data, missing: data.missing ?? "No verified phone number" })
-      .select("*")
-      .single(),
-  ) as IncompleteProspect;
-  return { prospect, duplicateLead: null };
-}
-
-export async function deleteProspect(db: Db, id: string) {
-  check(await db.from("incomplete_prospects").delete().eq("id", id));
-}
-
-/** Turns a prospect into a real lead once a valid phone number is supplied. */
-export async function promoteProspect(
-  db: Db,
-  id: string,
-  phone: { phone_number: unknown; phone_country: unknown },
-) {
-  const p = check(
-    await db.from("incomplete_prospects").select("*").eq("id", id).maybeSingle(),
-  ) as IncompleteProspect | null;
-  if (!p) throw new RepoError("Prospect not found", "not_found");
-  const res = await createLead(
-    db,
-    {
-      kind: p.kind,
-      name: p.name,
-      website: p.website,
-      instagram_handle: p.instagram_handle,
-      linkedin_url: p.linkedin_url,
-      industry: p.industry,
-      location: p.location,
-      company_size: p.company_size,
-      description: p.description,
-      research: p.research,
-      opportunity: p.opportunity,
-      why_fit: p.why_fit,
-      suggested_service: p.suggested_service,
-      fit_score: p.fit_score,
-      tags: p.tags,
-      contact_person: p.contact_person,
-      email: p.email,
-      source: p.source,
-      ...phone,
-    },
-    { allowSimilar: true },
-  );
-  if (res.duplicate) {
-    throw new RepoError(`"${res.lead.name}" is already in your CRM with the same website or profile.`, "duplicate");
-  }
-  await deleteProspect(db, id);
-  return res.lead;
 }
 
 export async function deleteLead(db: Db, id: string) {
@@ -402,26 +301,25 @@ export async function updateFollowUp(
 }
 
 export type FollowUpWithLead = FollowUp & {
-  lead: Pick<Lead, "id" | "name" | "kind" | "status" | "instagram_handle" | "phone_e164">;
+  lead: Pick<Lead, "id" | "name" | "status" | "instagram_handle">;
 };
 
 export async function listFollowUps(
   db: Db,
-  opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number; kind?: LeadKind } = {},
+  opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number } = {},
 ) {
   // Day boundaries in the user's timezone (the server may run in UTC).
   const startOfToday = startOfDayInTz();
   const endOfToday = new Date(startOfDayInTz(ymd(new Date(startOfToday.getTime() + 36 * 3_600_000))).getTime() - 1);
   let q = db
     .from("follow_ups")
-    .select(opts.kind ? "*, lead:leads!inner(id, name, kind, status, instagram_handle, phone_e164)" : "*, lead:leads(id, name, kind, status, instagram_handle, phone_e164)")
+    .select("*, lead:leads(id, name, status, instagram_handle)")
     .eq("status", "pending")
     .order("due_at");
   if (opts.range === "overdue") q = q.lt("due_at", startOfToday.toISOString());
   if (opts.range === "today")
     q = q.gte("due_at", startOfToday.toISOString()).lte("due_at", endOfToday.toISOString());
   if (opts.range === "upcoming") q = q.gt("due_at", endOfToday.toISOString());
-  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   return check(await q.limit(opts.limit ?? 500)) as FollowUpWithLead[];
 }
 
@@ -430,10 +328,9 @@ export async function listFollowUps(
 // ---------------------------------------------------------------------------
 export type DealWithPayments = Deal & { payments: Payment[] };
 
-export async function listDeals(db: Db, opts: { status?: Deal["status"]; kind?: LeadKind } = {}) {
+export async function listDeals(db: Db, opts: { status?: Deal["status"] } = {}) {
   let q = db.from("deals").select("*, payments(*)").order("created_at", { ascending: false });
   if (opts.status) q = q.eq("status", opts.status);
-  if (opts.kind) q = q.eq("kind", opts.kind);
   return check(await q) as DealWithPayments[];
 }
 
@@ -474,10 +371,9 @@ export async function dashboardStats(db: Db) {
   return check(await db.rpc("dashboard_stats")) as DashboardStats;
 }
 
-export async function pipelineFunnel(db: Db, kind: LeadKind, from?: string, to?: string) {
+export async function pipelineFunnel(db: Db, from?: string, to?: string) {
   return check(
     await db.rpc("pipeline_funnel", {
-      p_kind: kind,
       p_from: from ?? "-infinity",
       p_to: to ?? "infinity",
     }),
@@ -493,7 +389,6 @@ export async function revenueSummary(db: Db, from?: string, to?: string) {
 export async function searchAll(db: Db, query: string, limit = 20) {
   return check(await db.rpc("search_all", { p_query: query, p_limit: limit })) as {
     lead_id: string;
-    kind: LeadKind;
     name: string;
     status: LeadStatus;
     matched_on: string;
@@ -503,26 +398,24 @@ export async function searchAll(db: Db, query: string, limit = 20) {
 
 export async function listActivities(
   db: Db,
-  opts: { leadId?: string; type?: string; actor?: string; kind?: LeadKind; limit?: number; before?: string } = {},
+  opts: { leadId?: string; type?: string; actor?: string; limit?: number; before?: string } = {},
 ) {
   let q = db
     .from("activities")
-    .select(opts.kind ? "*, lead:leads!inner(id, name, kind)" : "*, lead:leads(id, name, kind)")
+    .select("*, lead:leads(id, name)")
     .order("created_at", { ascending: false });
   if (opts.leadId) q = q.eq("lead_id", opts.leadId);
   if (opts.type) q = q.like("type", `${opts.type}%`);
   if (opts.actor) q = q.eq("actor", opts.actor);
-  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.before) q = q.lt("created_at", opts.before);
   return check(await q.limit(opts.limit ?? 100)) as unknown as (Activity & {
-    lead: Pick<Lead, "id" | "name" | "kind"> | null;
+    lead: Pick<Lead, "id" | "name"> | null;
   })[];
 }
 
 /** Rank open leads: fit score, pipeline momentum, and freshness. */
-export async function topOpportunities(db: Db, kind?: LeadKind, limit = 10) {
+export async function topOpportunities(db: Db, limit = 10) {
   const leads = await listLeads(db, {
-    kind,
     status: ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"],
     limit: 500,
   });

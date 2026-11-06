@@ -42,12 +42,6 @@ revoke all on function private.log_activity from public;
 grant execute on function private.current_actor() to authenticated;
 grant execute on function private.log_activity(uuid, uuid, uuid, text, text, jsonb, boolean) to authenticated;
 
-create or replace function private.kind_label(k public.lead_kind)
-returns text language sql immutable set search_path = '' as $$
-  select case k when 'brand' then 'brand' else 'freelance lead' end
-$$;
-grant execute on function private.kind_label(public.lead_kind) to authenticated;
-
 -- ---------------------------------------------------------------------------
 -- updated_at maintenance
 -- ---------------------------------------------------------------------------
@@ -104,8 +98,8 @@ returns trigger language plpgsql set search_path = '' as $$
 begin
   if tg_op = 'INSERT' then
     perform private.log_activity(new.owner_id, new.id, null, 'lead_created',
-      format('New %s added: %s', private.kind_label(new.kind), new.name),
-      jsonb_build_object('kind', new.kind, 'source', new.source, 'fit_score', new.fit_score));
+      format('New brand added: %s', new.name),
+      jsonb_build_object('source', new.source, 'fit_score', new.fit_score));
     if coalesce(btrim(new.research), '') <> '' then
       perform private.log_activity(new.owner_id, new.id, null, 'research_completed',
         format('Research saved for %s', new.name), '{}'::jsonb);
@@ -136,8 +130,8 @@ begin
 
   if tg_op = 'DELETE' then
     perform private.log_activity(old.owner_id, null, null, 'lead_deleted',
-      format('Deleted %s: %s', private.kind_label(old.kind), old.name),
-      jsonb_build_object('lead_id', old.id, 'kind', old.kind));
+      format('Deleted brand: %s', old.name),
+      jsonb_build_object('lead_id', old.id));
     return old;
   end if;
   return null;
@@ -149,6 +143,30 @@ create trigger leads_after_update after update on public.leads
   for each row execute function private.leads_after_change();
 create trigger leads_after_delete after delete on public.leads
   for each row execute function private.leads_after_change();
+
+-- Phone numbers are optional; one that is given must still be valid.
+create or replace function private.leads_validate_phone()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' or new.phone_e164 is distinct from old.phone_e164
+     or new.phone_country is distinct from old.phone_country then
+    if new.phone_e164 is null then
+      new.phone_country := null;
+    else
+      if new.phone_e164 !~ '^\+[1-9][0-9]{6,14}$' then
+        raise exception 'Phone number must be in international format, e.g. +919876543210'
+          using errcode = '23514';
+      end if;
+      if new.phone_country is null or new.phone_country !~ '^[A-Z]{2}$' then
+        raise exception 'A valid phone country is required' using errcode = '23514';
+      end if;
+    end if;
+  end if;
+  return new;
+end $$;
+
+create trigger leads_validate_phone before insert or update on public.leads
+  for each row execute function private.leads_validate_phone();
 
 -- ---------------------------------------------------------------------------
 -- Contacts
@@ -382,31 +400,33 @@ create trigger payments_after_delete after delete on public.payments
 -- Public RPCs (exposed through PostgREST; run with caller's RLS)
 -- ===========================================================================
 
--- Duplicate check by website domain, Instagram handle, and fuzzy name.
+-- Duplicate check by website domain, Instagram handle, phone and fuzzy name.
 create or replace function public.check_duplicate(
   p_name text default null, p_website text default null,
-  p_instagram text default null, p_kind public.lead_kind default null
-) returns table (id uuid, kind public.lead_kind, name text, status public.lead_status,
-                 match_type text, score real)
+  p_instagram text default null, p_phone text default null
+) returns table (id uuid, name text, status public.lead_status, match_type text, score real)
 language sql stable set search_path = '' as $$
   with q as (
     select private.normalize_domain(p_website) as dom,
            private.normalize_handle(p_instagram) as handle,
-           nullif(btrim(coalesce(p_name, '')), '') as nm
+           nullif(btrim(coalesce(p_name, '')), '') as nm,
+           nullif(btrim(coalesce(p_phone, '')), '') as ph
   )
-  select l.id, l.kind, l.name, l.status,
+  select l.id, l.name, l.status,
          case when q.dom is not null and l.domain_normalized = q.dom then 'website'
               when q.handle is not null and l.instagram_handle_normalized = q.handle then 'instagram'
+              when q.ph is not null and l.phone_e164 = q.ph then 'phone'
               else 'name' end,
          case when (q.dom is not null and l.domain_normalized = q.dom)
                 or (q.handle is not null and l.instagram_handle_normalized = q.handle) then 1.0::real
+              when q.ph is not null and l.phone_e164 = q.ph then 0.95::real
               else extensions.similarity(lower(l.name), lower(q.nm)) end
     from public.leads l, q
-   where (p_kind is null or l.kind = p_kind)
-     and ((q.dom is not null and l.domain_normalized = q.dom)
-       or (q.handle is not null and l.instagram_handle_normalized = q.handle)
-       or (q.nm is not null and extensions.similarity(lower(l.name), lower(q.nm)) > 0.45))
-   order by 6 desc
+   where (q.dom is not null and l.domain_normalized = q.dom)
+      or (q.handle is not null and l.instagram_handle_normalized = q.handle)
+      or (q.ph is not null and l.phone_e164 = q.ph)
+      or (q.nm is not null and extensions.similarity(lower(l.name), lower(q.nm)) > 0.45)
+   order by 5 desc
    limit 10
 $$;
 
@@ -454,19 +474,17 @@ begin
   select * into s from public.settings where owner_id = l.owner_id;
   select count(*) into v_attempt from public.outreach where lead_id = l.id and status = 'sent';
 
-  -- The superseded follow-up (if any) is done: this message *is* the follow-up.
   update public.follow_ups set status = 'done', reason = 'Follow-up sent'
    where lead_id = l.id and status = 'pending';
 
   v_days := coalesce(p_follow_up_days,
-                     case when v_attempt <= 1 then coalesce(s.default_follow_up_days, 1)
-                          else coalesce(s.follow_up_gap_days, 3) end);
+                     case when v_attempt <= 1 then coalesce(s.default_follow_up_days, 3)
+                          else coalesce(s.follow_up_gap_days, 4) end);
 
-  if v_days > 0 and v_attempt <= coalesce(s.max_follow_ups, 3) + 1
+  if v_days > 0 and v_attempt <= coalesce(s.max_follow_ups, 2)
      and l.status not in ('won', 'lost', 'do_not_contact') then
     insert into public.follow_ups (owner_id, lead_id, outreach_id, due_at, attempt, reason)
-    values (l.owner_id, l.id, o.id, v_sent_at + make_interval(days => v_days), v_attempt,
-            'No reply yet')
+    values (l.owner_id, l.id, o.id, v_sent_at + make_interval(days => v_days), v_attempt, 'No reply yet')
     returning * into v_follow_up;
   end if;
 
@@ -480,8 +498,7 @@ end $$;
 create or replace function public.dashboard_stats()
 returns jsonb language sql stable set search_path = '' as $$
   select jsonb_build_object(
-    'total_brands',       (select count(*) from public.leads where kind = 'brand'),
-    'total_freelance',    (select count(*) from public.leads where kind = 'freelance'),
+    'total_brands',       (select count(*) from public.leads),
     'new_leads_7d',       (select count(*) from public.leads where created_at > now() - interval '7 days'),
     'messages_sent',      (select count(*) from public.outreach where status = 'sent'),
     'replies_received',   (select count(*) from public.interactions where type = 'reply'),
@@ -503,13 +520,12 @@ $$;
 
 -- Outreach funnel for a period (event-based so periods compare fairly).
 create or replace function public.pipeline_funnel(
-  p_kind public.lead_kind, p_from timestamptz default '-infinity', p_to timestamptz default 'infinity'
+  p_from timestamptz default '-infinity', p_to timestamptz default 'infinity'
 ) returns jsonb language sql stable set search_path = '' as $$
-  with l as (select id from public.leads where kind = p_kind),
-  discovered as (select count(*) n from public.leads
-                  where kind = p_kind and created_at >= p_from and created_at < p_to),
+  with l as (select id from public.leads),
+  discovered as (select count(*) n from public.leads where created_at >= p_from and created_at < p_to),
   qualified as (select count(*) n from public.leads
-                 where kind = p_kind and created_at >= p_from and created_at < p_to
+                 where created_at >= p_from and created_at < p_to
                    and (coalesce(fit_score, 0) >= 60 or coalesce(btrim(research), '') <> '')),
   contacted as (select count(distinct o.lead_id) n from public.outreach o join l on l.id = o.lead_id
                  where o.status = 'sent' and o.sent_at >= p_from and o.sent_at < p_to),
@@ -536,12 +552,12 @@ create or replace function public.pipeline_funnel(
   )
 $$;
 
--- Revenue summary for a period.
+-- Revenue summary for a period (deal value won uses the IST calendar day).
 create or replace function public.revenue_summary(
   p_from date default '0001-01-01', p_to date default '9999-12-31'
 ) returns jsonb language sql stable set search_path = '' as $$
   with paid as (
-    select p.amount, p.paid_on, d.kind, d.client_name, d.lead_id
+    select p.amount, p.paid_on, d.client_name, d.lead_id
       from public.payments p join public.deals d on d.id = p.deal_id
      where p.paid_on >= p_from and p.paid_on <= p_to
   ),
@@ -551,33 +567,29 @@ create or replace function public.revenue_summary(
   )
   select jsonb_build_object(
     'total_received', (select coalesce(sum(amount), 0) from paid),
-    'brand_received', (select coalesce(sum(amount), 0) from paid where kind = 'brand'),
-    'freelance_received', (select coalesce(sum(amount), 0) from paid where kind = 'freelance'),
     'pending_payments', (select coalesce(sum(greatest(amount - received, 0)), 0) from deal_paid where status = 'won'),
     'expected_from_active', (select coalesce(sum(greatest(amount - received, 0)), 0) from deal_paid where status = 'active'),
     'won_deal_value', (select coalesce(sum(amount), 0) from deal_paid
-                        where status = 'won' and closed_at::date >= p_from and closed_at::date <= p_to),
+                        where status = 'won'
+                          and (closed_at at time zone 'Asia/Kolkata')::date >= p_from
+                          and (closed_at at time zone 'Asia/Kolkata')::date <= p_to),
     'monthly', coalesce((select jsonb_agg(m order by m ->> 'month') from (
                   select jsonb_build_object('month', to_char(date_trunc('month', paid_on), 'YYYY-MM'),
-                           'brand', coalesce(sum(amount) filter (where kind = 'brand'), 0),
-                           'freelance', coalesce(sum(amount) filter (where kind = 'freelance'), 0),
                            'total', sum(amount)) m
                     from paid group by date_trunc('month', paid_on)) s), '[]'::jsonb),
     'by_client', coalesce((select jsonb_agg(c order by (c ->> 'received')::numeric desc) from (
-                  select jsonb_build_object('client', client_name, 'lead_id', lead_id, 'kind', kind,
-                           'received', sum(amount)) c
-                    from paid group by client_name, lead_id, kind) s), '[]'::jsonb)
+                  select jsonb_build_object('client', client_name, 'lead_id', lead_id, 'received', sum(amount)) c
+                    from paid group by client_name, lead_id) s), '[]'::jsonb)
   )
 $$;
 
 -- Global search across leads and contacts.
 create or replace function public.search_all(p_query text, p_limit integer default 20)
-returns table (lead_id uuid, kind public.lead_kind, name text, status public.lead_status,
-               matched_on text, score real)
+returns table (lead_id uuid, name text, status public.lead_status, matched_on text, score real)
 language sql stable set search_path = '' as $$
   with q as (select lower(btrim(p_query)) as t),
   hits as (
-  select distinct on (l.id) l.id, l.kind, l.name, l.status, m.matched_on, m.score
+  select distinct on (l.id) l.id, l.name, l.status, m.matched_on, m.score
     from q, public.leads l
     cross join lateral (
       select 'name'::text as matched_on,
@@ -605,18 +617,18 @@ language sql stable set search_path = '' as $$
   select * from hits order by score desc, name limit greatest(p_limit, 1)
 $$;
 
-grant execute on function public.check_duplicate(text, text, text, public.lead_kind) to authenticated;
+revoke execute on function public.check_duplicate(text, text, text, text) from public, anon;
+revoke execute on function public.pipeline_funnel(timestamptz, timestamptz) from public, anon;
+revoke execute on function public.search_all(text, integer) from public, anon;
+revoke execute on function public.mark_outreach_sent(uuid, integer, timestamptz, boolean) from public, anon;
+revoke execute on function public.dashboard_stats() from public, anon;
+revoke execute on function public.revenue_summary(date, date) from public, anon;
+grant execute on function public.check_duplicate(text, text, text, text) to authenticated;
+grant execute on function public.pipeline_funnel(timestamptz, timestamptz) to authenticated;
+grant execute on function public.search_all(text, integer) to authenticated;
 grant execute on function public.mark_outreach_sent(uuid, integer, timestamptz, boolean) to authenticated;
 grant execute on function public.dashboard_stats() to authenticated;
-grant execute on function public.pipeline_funnel(public.lead_kind, timestamptz, timestamptz) to authenticated;
 grant execute on function public.revenue_summary(date, date) to authenticated;
-grant execute on function public.search_all(text, integer) to authenticated;
-revoke execute on function public.check_duplicate(text, text, text, public.lead_kind) from anon;
-revoke execute on function public.mark_outreach_sent(uuid, integer, timestamptz, boolean) from anon;
-revoke execute on function public.dashboard_stats() from anon;
-revoke execute on function public.pipeline_funnel(public.lead_kind, timestamptz, timestamptz) from anon;
-revoke execute on function public.revenue_summary(date, date) from anon;
-revoke execute on function public.search_all(text, integer) from anon;
 
 -- ---------------------------------------------------------------------------
 -- Scheduled job: flag due follow-ups every 15 minutes.

@@ -5,7 +5,7 @@ import { createDb, as, asSystem, USER_A, USER_B } from "./harness";
 let db: PGlite;
 
 async function newLead(user = USER_A, fields: Record<string, unknown> = {}, claude = false) {
-  const f = { kind: "brand", name: "Acme AI", website: "https://www.acme.ai/about", phone_e164: "+919876543210", phone_country: "IN", ...fields };
+  const f = { name: "Acme AI", website: "https://www.acme.ai/about", ...fields };
   const cols = Object.keys(f);
   const rows = await as<{ id: string }>(
     db,
@@ -40,7 +40,7 @@ beforeAll(async () => {
 describe("settings", () => {
   it("creates a settings row for each new user", async () => {
     const rows = await as(db, USER_A, "select default_follow_up_days from settings");
-    expect(rows).toEqual([{ default_follow_up_days: 1 }]);
+    expect(rows).toEqual([{ default_follow_up_days: 3 }]);
   });
 });
 
@@ -72,7 +72,7 @@ describe("row level security", () => {
 });
 
 describe("duplicates", () => {
-  it("rejects the same domain for the same kind", async () => {
+  it("rejects the same domain", async () => {
     await newLead(USER_A, { name: "Dup One", website: "https://dupe.dev" });
     await expect(newLead(USER_A, { name: "Dup Two", website: "http://www.DUPE.dev/pricing" })).rejects.toThrow(
       /leads_unique_domain/,
@@ -103,21 +103,18 @@ describe("outreach & follow-ups", () => {
     expect((await lead(id)).status).toBe("drafted");
   });
 
-  it("marking sent sets contacted and schedules a follow-up using the lead kind's rules", async () => {
-    // Defaults for a new account: brand 3 days (DM-friendly), freelance 2 days.
-    for (const [kind, days] of [["brand", 3], ["freelance", 2]] as const) {
-      const id = await newLead(USER_A, { kind, name: `Sendee ${kind}`, website: `sendee-${kind}.com` });
-      const o = await draft(id);
-      const [{ mark_outreach_sent: res }] = await as<{ mark_outreach_sent: { follow_up: { due_at: string } } }>(
-        db, USER_A, "select mark_outreach_sent($1)", [o]);
-      expect(res.follow_up).not.toBeNull();
-      expect((await lead(id)).status).toBe("contacted");
-      const fu = await followUps(id);
-      expect(fu).toHaveLength(1);
-      const hours = (new Date(fu[0].due_at).getTime() - Date.now()) / 3.6e6;
-      expect(hours).toBeGreaterThan(days * 24 - 1);
-      expect(hours).toBeLessThan(days * 24 + 1);
-    }
+  it("marking sent sets contacted and schedules a follow-up after the default 3 days", async () => {
+    const id = await newLead(USER_A, { name: "Sendee", website: "sendee.com" });
+    const o = await draft(id);
+    const [{ mark_outreach_sent: res }] = await as<{ mark_outreach_sent: { follow_up: { due_at: string } } }>(
+      db, USER_A, "select mark_outreach_sent($1)", [o]);
+    expect(res.follow_up).not.toBeNull();
+    expect((await lead(id)).status).toBe("contacted");
+    const fu = await followUps(id);
+    expect(fu).toHaveLength(1);
+    const hours = (new Date(fu[0].due_at).getTime() - Date.now()) / 3.6e6;
+    expect(hours).toBeGreaterThan(3 * 24 - 1);
+    expect(hours).toBeLessThan(3 * 24 + 1);
   });
 
   it("blocks duplicate outreach on the same channel within 20h unless forced", async () => {
@@ -214,13 +211,13 @@ describe("revenue", () => {
   it("computes received, pending and expected; winning a deal wins the lead", async () => {
     const id = await newLead(USER_A, { name: "Payer", website: "payer.com" });
     const [{ id: won }] = await as<{ id: string }>(db, USER_A,
-      "insert into deals (lead_id, kind, title, amount) values ($1, 'brand', 'Reel collab', 15000) returning id", [id]);
+      "insert into deals (lead_id, title, amount) values ($1, 'Reel collab', 15000) returning id", [id]);
     expect((await lead(id)).status).toBe("negotiating");
     await as(db, USER_A, "update deals set status = 'won' where id = $1", [won]);
     expect((await lead(id)).status).toBe("won");
     await as(db, USER_A, "insert into payments (deal_id, amount) values ($1, 10000)", [won]);
     await as(db, USER_A,
-      "insert into deals (kind, client_name, title, amount) values ('freelance', 'Agency X', 'Landing page', 40000)");
+      "insert into deals (client_name, title, amount) values ('Brand X', 'Story set', 40000)");
 
     const [{ revenue_summary: r }] = await as<{ revenue_summary: Record<string, unknown> }>(
       db, USER_A, "select revenue_summary()");
@@ -239,7 +236,7 @@ describe("revenue", () => {
 describe("reports & search", () => {
   it("pipeline_funnel counts contacted, replied and won", async () => {
     const [{ pipeline_funnel: f }] = await as<{ pipeline_funnel: Record<string, number> }>(
-      db, USER_A, "select pipeline_funnel('brand')");
+      db, USER_A, "select pipeline_funnel()");
     expect(f.contacted).toBeGreaterThan(0);
     expect(f.replied).toBeGreaterThan(0);
     expect(f.won).toBeGreaterThanOrEqual(1);

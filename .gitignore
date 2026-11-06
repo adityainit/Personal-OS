@@ -48,3 +48,6 @@ supabase/.temp
 /public/profile.*
 .claude/
 *.local
+
+# one-time SQL for my own database: never commit
+/supabase/local/

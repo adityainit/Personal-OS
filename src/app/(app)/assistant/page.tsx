@@ -7,20 +7,18 @@ import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
 
 const PROMPTS: [string, string][] = [
-  ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with their Instagram handle, any public contacts, and separate Instagram DM and email drafts. Brands don't need a phone number."],
-  ["Freelance research", "Research five software development or web agencies that could hire me as a freelancer. Check what they do, who their clients are and where they might need frontend, backend, UI/UX or automation help. Add only the ones I'm a good fit for, with a verified phone number, the best service to offer and outreach drafts. If you can't verify a phone number, save it as an incomplete prospect instead."],
-  ["Add a company", "Add Acme Labs (acmelabs.com) to my freelance leads — research them first."],
+  ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with their Instagram handle, any public contacts, and separate Instagram DM and email drafts."],
+  ["Add a brand", "Add boAt (@boat.nirvana) to my brand deals — research them first and draft a DM."],
   ["Update status", "Update Notion's status to Interested."],
   ["Log outreach", "I just sent the Instagram DM to Notion. Record it."],
   ["Log a reply", "Vercel replied to my email — they want rates for a reel. Record the reply."],
   ["Revenue", "Record ₹15,000 revenue from my brand collaboration with Notion, received today."],
   ["Follow-ups", "Show all follow-ups due today."],
-  ["Prioritise", "What are my most promising freelance opportunities right now, and what should I do next for each?"],
+  ["Prioritise", "What are my most promising brand deals right now, and what should I do next for each?"],
 ];
 
 const TOOLS = [
-  "get_creator_profile", "update_creator_profile", "dashboard_stats", "check_duplicate", "create_lead",
-  "save_incomplete_prospect", "list_incomplete_prospects", "promote_prospect", "update_lead",
+  "get_creator_profile", "update_creator_profile", "dashboard_stats", "check_duplicate", "create_lead", "update_lead",
   "update_lead_status", "search_leads", "get_lead", "add_contact", "save_outreach_draft", "update_outreach_draft",
   "mark_outreach_sent", "record_interaction", "list_follow_ups", "set_follow_up", "complete_follow_up", "create_deal",
   "update_deal", "record_payment", "list_deals", "revenue_summary", "top_opportunities", "pipeline_report", "recent_activity",
@@ -82,13 +80,12 @@ export default async function AssistantPage() {
           <CardHeader title={<span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" /> Ground rules</span>} />
           <ul className="flex flex-col gap-2.5 p-4 text-sm">
             {[
-              [true, "Researches brands & businesses on the web"],
-              [true, "Saves brands with their Instagram handle, and freelance leads with a verified phone number, plus research and fit scores"],
-              [true, "Keeps freelance businesses with no verified phone as incomplete prospects (never invents a number)"],
+              [true, "Researches brands on the web"],
+              [true, "Saves brands with their Instagram handle, research and fit scores (never invents contact details)"],
               [true, "Writes separate DM and email drafts for you to edit"],
               [true, "Updates statuses, follow-ups, deals and revenue when you ask"],
               [true, "Prevents duplicate leads and duplicate outreach"],
-              [false, "Never sends DMs, emails or WhatsApp messages"],
+              [false, "Never sends DMs or emails"],
               [false, "Cannot delete records — only you can, from this site"],
               [false, "Cannot see anything outside your account"],
             ].map(([okay, t]) => (
