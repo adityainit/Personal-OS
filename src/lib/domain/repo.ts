@@ -197,17 +197,22 @@ export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: 
 }
 
 const NO_PHONE =
-  "This lead has no phone number yet. Add a valid phone number (with country code) to save other changes.";
+  "This freelance lead has no phone number yet. Add a valid phone number (with country code) to save other changes.";
+const PHONE_REQUIRED = "Freelance leads need a phone number with country code";
 
 export async function updateLead(db: Db, id: string, input: unknown) {
   const data = parse(leadUpdateSchema, input);
   const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
   if (Object.keys(clean).length === 0) return getLead(db, id);
-  // Status moves are always allowed; any other edit needs a phone number on record.
+  // Status moves are always allowed. Freelance leads need a phone number on record for
+  // any other edit; brand leads never need one.
   const onlyStatus = Object.keys(clean).every((k) => k === "status");
-  if (!onlyStatus && !("phone_e164" in clean)) {
+  if (!onlyStatus) {
     const existing = await getLead(db, id);
-    if (!existing.phone_e164) throw new RepoError(NO_PHONE, "invalid");
+    if (existing.kind === "freelance") {
+      if ("phone_e164" in clean && !clean.phone_e164) throw new RepoError(PHONE_REQUIRED, "invalid");
+      if (!("phone_e164" in clean) && !existing.phone_e164) throw new RepoError(NO_PHONE, "invalid");
+    }
   }
   const lead = check(await db.from("leads").update(clean).eq("id", id).select("*").maybeSingle()) as Lead | null;
   if (!lead) throw new RepoError("Lead not found", "not_found");
@@ -396,21 +401,27 @@ export async function updateFollowUp(
   return check(await db.from("follow_ups").update(patch).eq("id", id).select("*").single()) as FollowUp;
 }
 
-export type FollowUpWithLead = FollowUp & { lead: Pick<Lead, "id" | "name" | "kind" | "status" | "instagram_handle"> };
+export type FollowUpWithLead = FollowUp & {
+  lead: Pick<Lead, "id" | "name" | "kind" | "status" | "instagram_handle" | "phone_e164">;
+};
 
-export async function listFollowUps(db: Db, opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number } = {}) {
+export async function listFollowUps(
+  db: Db,
+  opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number; kind?: LeadKind } = {},
+) {
   // Day boundaries in the user's timezone (the server may run in UTC).
   const startOfToday = startOfDayInTz();
   const endOfToday = new Date(startOfDayInTz(ymd(new Date(startOfToday.getTime() + 36 * 3_600_000))).getTime() - 1);
   let q = db
     .from("follow_ups")
-    .select("*, lead:leads(id, name, kind, status, instagram_handle)")
+    .select(opts.kind ? "*, lead:leads!inner(id, name, kind, status, instagram_handle, phone_e164)" : "*, lead:leads(id, name, kind, status, instagram_handle, phone_e164)")
     .eq("status", "pending")
     .order("due_at");
   if (opts.range === "overdue") q = q.lt("due_at", startOfToday.toISOString());
   if (opts.range === "today")
     q = q.gte("due_at", startOfToday.toISOString()).lte("due_at", endOfToday.toISOString());
   if (opts.range === "upcoming") q = q.gt("due_at", endOfToday.toISOString());
+  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   return check(await q.limit(opts.limit ?? 500)) as FollowUpWithLead[];
 }
 

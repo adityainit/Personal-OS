@@ -1,4 +1,4 @@
-import { Database, Download } from "lucide-react";
+import { Briefcase, Database, Download } from "lucide-react";
 import { saveCreatorProfileAction, saveFollowUpRulesAction } from "@/actions";
 import { InstagramIcon } from "@/components/icons";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
@@ -7,6 +7,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { PageHeader } from "@/components/ui/page-header";
 import { getSettings } from "@/lib/domain/repo";
+import { rulesFor } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 
 const EXPORTS: [string, string][] = [
@@ -21,6 +22,8 @@ export default async function SettingsPage() {
   const { supabase, user } = await requireUser();
   const s = await getSettings(supabase);
   const p = s.creator_profile ?? {};
+  const brandRules = rulesFor(s, "brand");
+  const freelanceRules = rulesFor(s, "freelance");
 
   return (
     <>
@@ -76,17 +79,37 @@ export default async function SettingsPage() {
 
         <div className="flex flex-col gap-4">
           <Card id="follow-up-rules">
-            <CardHeader title="Follow-up rules" description="Applied when you mark a message as sent." />
-            <ActionForm action={saveFollowUpRulesAction} reset={false} closeDialog={false} className="flex flex-col gap-4 p-4">
-              <Field label="First follow-up after (days)" hint="0 = don't schedule automatically">
-                <Input name="default_follow_up_days" type="number" min={0} max={90} defaultValue={s.default_follow_up_days} />
-              </Field>
-              <Field label="Then every (days)">
-                <Input name="follow_up_gap_days" type="number" min={1} max={90} defaultValue={s.follow_up_gap_days} />
-              </Field>
-              <Field label="Maximum follow-ups" hint="Stops scheduling after this many follow-ups without a reply">
-                <Input name="max_follow_ups" type="number" min={0} max={20} defaultValue={s.max_follow_ups} />
-              </Field>
+            <CardHeader
+              title="Follow-up rules"
+              description="Separate timing for brands and clients. Applied when you mark a message as sent."
+            />
+            <ActionForm action={saveFollowUpRulesAction} reset={false} closeDialog={false} className="flex flex-col gap-5 p-4">
+              {(
+                [
+                  ["brand", "Instagram brand deals", "Brands reply slowly to DMs, so wait longer and nudge less.", brandRules],
+                  ["freelance", "Freelancing", "Clients reached by email, phone or LinkedIn.", freelanceRules],
+                ] as const
+              ).map(([k, title, hint, r]) => (
+                <fieldset key={k} className="flex flex-col gap-3 rounded-xl border border-border p-3">
+                  <legend className="flex items-center gap-1.5 px-1 text-sm font-medium">
+                    {k === "brand" ? <InstagramIcon className="size-3.5" /> : <Briefcase className="size-3.5" />}
+                    {title}
+                  </legend>
+                  <p className="-mt-1 text-[11px] text-muted">{hint}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="First after (days)">
+                      <Input name={`${k}_first_follow_up_days`} type="number" min={0} max={90} defaultValue={r.first} />
+                    </Field>
+                    <Field label="Then every (days)">
+                      <Input name={`${k}_follow_up_gap_days`} type="number" min={1} max={90} defaultValue={r.gap} />
+                    </Field>
+                    <Field label="Max follow-ups">
+                      <Input name={`${k}_max_follow_ups`} type="number" min={0} max={20} defaultValue={r.max} />
+                    </Field>
+                  </div>
+                </fieldset>
+              ))}
+              <p className="text-[11px] text-muted">0 days or 0 follow-ups = don&apos;t schedule follow-ups automatically.</p>
               <div className="flex justify-end">
                 <SubmitButton>Save rules</SubmitButton>
               </div>

@@ -101,8 +101,14 @@ const phoneFields = {
 export const leadFields = { ...leadDetailFields, ...phoneFields };
 
 export const NEEDS_PROFILE = "Add a website or a social profile (Instagram or LinkedIn)";
+export const NEEDS_BRAND_PROFILE = "Add the brand's Instagram handle or website";
 
-/** New leads: name, a valid phone number with country code, and a website or profile are required. */
+/**
+ * New leads.
+ *  - Freelance: name, a valid phone number with country code, and a website or profile.
+ *  - Instagram brand deal: name and the brand's Instagram handle or website. No phone number
+ *    (brand deals happen over DM / email); one that is given is still validated.
+ */
 export const leadCreateSchema = z
   .object({
     kind: leadKind,
@@ -111,21 +117,29 @@ export const leadCreateSchema = z
     source: z.enum(["claude", "manual"]).optional(),
   })
   .transform((d, ctx) => {
-    const phone = validatePhone(d.phone_number, d.phone_country);
+    const { phone_number, phone_country, ...rest } = d;
+    if (d.kind === "brand") {
+      if (!d.instagram_handle && !d.website) {
+        ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
+        return z.NEVER;
+      }
+      if (!phone_number) return { ...rest, phone_e164: null, phone_country: null };
+    } else if (!d.website && !d.instagram_handle && !d.linkedin_url) {
+      ctx.addIssue({ code: "custom", path: ["website"], message: NEEDS_PROFILE });
+      return z.NEVER;
+    }
+    const phone = validatePhone(phone_number, phone_country);
     if (!phone.ok) {
       ctx.addIssue({ code: "custom", path: ["phone_number"], message: phone.error });
       return z.NEVER;
     }
-    if (!d.website && !d.instagram_handle && !d.linkedin_url) {
-      ctx.addIssue({ code: "custom", path: ["website"], message: NEEDS_PROFILE });
-      return z.NEVER;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { phone_number, phone_country, ...rest } = d;
-    return { ...rest, phone_e164: phone.e164, phone_country: phone.country };
+    return { ...rest, phone_e164: phone.e164 as string | null, phone_country: phone.country as string | null };
   });
 
-/** Edits: phone is validated whenever it is supplied. */
+/**
+ * Edits: a phone number is validated whenever it is supplied. An empty phone becomes
+ * `phone_e164: null`; the repository only allows that for brand leads.
+ */
 export const leadUpdateSchema = z
   .object(leadFields)
   .partial()
@@ -135,15 +149,14 @@ export const leadUpdateSchema = z
     const { phone_number, phone_country, contact_person, email, ...rest } = d;
     if (phone_number === undefined && phone_country === undefined) return rest;
     if (phone_number === undefined || phone_number === null) {
-      ctx.addIssue({ code: "custom", path: ["phone_number"], message: "Phone number is required" });
-      return z.NEVER;
+      return { ...rest, phone_e164: null as string | null, phone_country: null as string | null };
     }
     const phone = validatePhone(phone_number, phone_country);
     if (!phone.ok) {
       ctx.addIssue({ code: "custom", path: ["phone_number"], message: phone.error });
       return z.NEVER;
     }
-    return { ...rest, phone_e164: phone.e164, phone_country: phone.country };
+    return { ...rest, phone_e164: phone.e164 as string | null, phone_country: phone.country as string | null };
   });
 
 /** Researched businesses without a verified phone number. Never part of the pipeline. */
@@ -226,10 +239,14 @@ export const creatorProfileSchema = z.object({
   bio: optText(5000),
 });
 
+/** Separate follow-up timing for Instagram brand deals and freelance clients. */
 export const followUpRulesSchema = z.object({
-  default_follow_up_days: optInt(0, 90).transform((v) => v ?? 1),
-  follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 3),
-  max_follow_ups: optInt(0, 20).transform((v) => v ?? 3),
+  brand_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
+  brand_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
+  brand_max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
+  freelance_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 2),
+  freelance_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 3),
+  freelance_max_follow_ups: optInt(0, 20).transform((v) => v ?? 3),
 });
 
 /** Strip null values so creator profile JSON stays tidy. */

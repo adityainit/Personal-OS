@@ -174,10 +174,49 @@ export interface CreatorProfile {
 export interface Settings {
   owner_id: string;
   creator_profile: CreatorProfile;
+  /** Legacy shared rules (kept for older rows); the per-kind columns below are used. */
   default_follow_up_days: number;
   follow_up_gap_days: number;
   max_follow_ups: number;
+  brand_first_follow_up_days: number;
+  brand_follow_up_gap_days: number;
+  brand_max_follow_ups: number;
+  freelance_first_follow_up_days: number;
+  freelance_follow_up_gap_days: number;
+  freelance_max_follow_ups: number;
   currency: string;
+}
+
+export interface FollowUpRules {
+  first: number;
+  gap: number;
+  max: number;
+}
+
+/**
+ * Follow-up rules for one kind of lead. Falls back to sensible defaults when the
+ * per-kind columns don't exist yet (database migration 4 not applied).
+ */
+export function rulesFor(s: Partial<Settings> | null | undefined, kind: LeadKind): FollowUpRules {
+  if (kind === "brand") {
+    return {
+      first: s?.brand_first_follow_up_days ?? 3,
+      gap: s?.brand_follow_up_gap_days ?? 4,
+      max: s?.brand_max_follow_ups ?? 2,
+    };
+  }
+  return {
+    first: s?.freelance_first_follow_up_days ?? s?.default_follow_up_days ?? 2,
+    gap: s?.freelance_follow_up_gap_days ?? s?.follow_up_gap_days ?? 3,
+    max: s?.freelance_max_follow_ups ?? s?.max_follow_ups ?? 3,
+  };
+}
+
+/** "after 3 days, then every 4 days, up to 2 follow-ups" */
+export function describeRules(r: FollowUpRules) {
+  if (r.first === 0 || r.max === 0) return "no automatic follow-ups";
+  const d = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+  return `first after ${d(r.first)}, then every ${d(r.gap)}, up to ${r.max} follow-up${r.max === 1 ? "" : "s"}`;
 }
 
 export interface DashboardStats {

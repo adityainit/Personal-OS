@@ -7,8 +7,8 @@ import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
 
 const PROMPTS: [string, string][] = [
-  ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with a verified phone number, any public contacts, and separate Instagram DM and email drafts. If you can't verify a phone number, save it as an incomplete prospect instead."],
-  ["Freelance research", "Research five software development or web agencies that could hire me as a freelancer. Check what they do, who their clients are and where they might need frontend, backend, UI/UX or automation help. Add only the ones I'm a good fit for, with the best service to offer and outreach drafts."],
+  ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with their Instagram handle, any public contacts, and separate Instagram DM and email drafts. Brands don't need a phone number."],
+  ["Freelance research", "Research five software development or web agencies that could hire me as a freelancer. Check what they do, who their clients are and where they might need frontend, backend, UI/UX or automation help. Add only the ones I'm a good fit for, with a verified phone number, the best service to offer and outreach drafts. If you can't verify a phone number, save it as an incomplete prospect instead."],
   ["Add a company", "Add Acme Labs (acmelabs.com) to my freelance leads — research them first."],
   ["Update status", "Update Notion's status to Interested."],
   ["Log outreach", "I just sent the Instagram DM to Notion. Record it."],
@@ -83,8 +83,8 @@ export default async function AssistantPage() {
           <ul className="flex flex-col gap-2.5 p-4 text-sm">
             {[
               [true, "Researches brands & businesses on the web"],
-              [true, "Saves leads with a verified phone number, research, public contacts and fit scores"],
-              [true, "Keeps businesses with no verified phone as incomplete prospects (never invents a number)"],
+              [true, "Saves brands with their Instagram handle, and freelance leads with a verified phone number, plus research and fit scores"],
+              [true, "Keeps freelance businesses with no verified phone as incomplete prospects (never invents a number)"],
               [true, "Writes separate DM and email drafts for you to edit"],
               [true, "Updates statuses, follow-ups, deals and revenue when you ask"],
               [true, "Prevents duplicate leads and duplicate outreach"],

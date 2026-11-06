@@ -46,7 +46,8 @@ describe("safeNext", () => {
   });
 });
 
-const OK_LEAD = { kind: "brand", name: "Acme", website: "acme.ai", phone_country: "IN", phone_number: "98765 43210" };
+const OK_LEAD = { kind: "freelance", name: "Acme", website: "acme.ai", phone_country: "IN", phone_number: "98765 43210" };
+const OK_BRAND = { kind: "brand", name: "Glow Labs", instagram_handle: "@glowlabs" };
 
 describe("phone validation", () => {
   it("accepts real numbers and returns E.164", () => {
@@ -99,11 +100,22 @@ describe("lead creation rules (forms and MCP share these)", () => {
     expect(leadCreateSchema.safeParse({ ...OK_LEAD, fit_score: 150 }).success).toBe(false);
     expect(leadCreateSchema.safeParse({ ...OK_LEAD, website: "not a url" }).success).toBe(false);
   });
-  it("edits validate the phone only when supplied, and never allow an empty one", () => {
+  it("edits validate the phone only when supplied; an empty one means 'remove' (repo blocks that for freelance)", () => {
     expect(leadUpdateSchema.parse({ status: "won" })).toEqual({ status: "won" });
     expect(leadUpdateSchema.safeParse({ phone_number: "98765 43210", phone_country: "IN" }).data).toMatchObject({ phone_e164: "+919876543210" });
-    expect(leadUpdateSchema.safeParse({ phone_number: "", phone_country: "IN" }).success).toBe(false);
+    expect(leadUpdateSchema.parse({ phone_number: "", phone_country: "IN" })).toMatchObject({ phone_e164: null });
     expect(leadUpdateSchema.safeParse({ phone_number: "12", phone_country: "IN" }).success).toBe(false);
+  });
+  it("brand deals need no phone number, but an Instagram handle or website", () => {
+    expect(leadCreateSchema.parse(OK_BRAND)).toMatchObject({ phone_e164: null, phone_country: null });
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, instagram_handle: "", website: "glowlabs.com" }).success).toBe(true);
+    const r = leadCreateSchema.safeParse({ ...OK_BRAND, instagram_handle: "", linkedin_url: "linkedin.com/company/glow" });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0].path).toEqual(["instagram_handle"]);
+  });
+  it("a phone number given for a brand is still validated", () => {
+    expect(leadCreateSchema.safeParse({ ...OK_BRAND, phone_number: "123", phone_country: "IN" }).success).toBe(false);
+    expect(leadCreateSchema.parse({ ...OK_BRAND, phone_number: "98765 43210", phone_country: "IN" }).phone_e164).toBe("+919876543210");
   });
   it("prospects need no phone", () => {
     expect(prospectSchema.safeParse({ kind: "freelance", name: "Maybe Agency" }).success).toBe(true);

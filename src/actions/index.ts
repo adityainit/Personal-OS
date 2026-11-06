@@ -392,6 +392,9 @@ export async function saveFollowUpRulesAction(_: ActionResult | null, fd: FormDa
     refresh();
     return ok("Follow-up rules saved");
   } catch (e) {
+    if (e instanceof Error && /brand_|freelance_/.test(e.message)) {
+      return { ok: false, error: "Run database migration 4 in Supabase first (see README → Supabase setup)." };
+    }
     return fail(e);
   }
 }

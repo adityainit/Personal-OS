@@ -14,7 +14,16 @@ export function LeadFields({ kind, lead }: { kind: LeadKind; lead?: Lead }) {
       {!lead ? <input type="hidden" name="kind" value={kind} /> : null}
 
       <div className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted sm:col-span-2">
-        <span className="font-medium text-fg">Required:</span> name, phone number with country code, and a website or social profile.
+        {isBrand ? (
+          <>
+            <span className="font-medium text-fg">Required:</span> brand name and their Instagram handle (or website). No phone number
+            needed — you&apos;ll reach them by DM or email.
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-fg">Required:</span> name, phone number with country code, and a website or social profile.
+          </>
+        )}{" "}
         Email is optional — leave it empty if you can&apos;t find a public one. Never guess contact details.
       </div>
 
@@ -22,16 +31,28 @@ export function LeadFields({ kind, lead }: { kind: LeadKind; lead?: Lead }) {
         <Input name="name" required defaultValue={lead?.name} placeholder={isBrand ? "e.g. Notion" : "e.g. Pixel Agency"} />
       </Field>
 
-      <div className="sm:col-span-2">
-        <PhoneField defaultCountry={phone.country} defaultNumber={phone.national} />
-      </div>
-
-      <Field label="Website">
-        <Input name="website" defaultValue={lead?.website ?? ""} placeholder="example.com" />
-      </Field>
-      <Field label="Instagram profile">
-        <Input name="instagram_handle" defaultValue={lead?.instagram_handle ?? ""} placeholder="@handle or instagram.com/handle" />
-      </Field>
+      {isBrand ? (
+        <>
+          <Field label="Instagram handle *" hint="Where you'll DM them">
+            <Input name="instagram_handle" defaultValue={lead?.instagram_handle ?? ""} placeholder="@brand or instagram.com/brand" />
+          </Field>
+          <Field label="Website">
+            <Input name="website" defaultValue={lead?.website ?? ""} placeholder="brand.com" />
+          </Field>
+        </>
+      ) : (
+        <>
+          <div className="sm:col-span-2">
+            <PhoneField defaultCountry={phone.country} defaultNumber={phone.national} />
+          </div>
+          <Field label="Website">
+            <Input name="website" defaultValue={lead?.website ?? ""} placeholder="example.com" />
+          </Field>
+          <Field label="Instagram profile">
+            <Input name="instagram_handle" defaultValue={lead?.instagram_handle ?? ""} placeholder="@handle or instagram.com/handle" />
+          </Field>
+        </>
+      )}
       <Field label="LinkedIn profile">
         <Input name="linkedin_url" defaultValue={lead?.linkedin_url ?? ""} placeholder="linkedin.com/company/…" />
       </Field>
@@ -42,7 +63,7 @@ export function LeadFields({ kind, lead }: { kind: LeadKind; lead?: Lead }) {
       {!lead ? (
         <>
           <Field label="Contact person">
-            <Input name="contact_person" placeholder="Name of who you'll speak to" />
+            <Input name="contact_person" placeholder={isBrand ? "Marketing / partnerships contact" : "Name of who you'll speak to"} />
           </Field>
           <Field label="Email (optional)">
             <Input name="email" type="email" autoComplete="off" placeholder="Only if publicly listed" />
@@ -53,7 +74,7 @@ export function LeadFields({ kind, lead }: { kind: LeadKind; lead?: Lead }) {
       <Field label="Location">
         <Input name="location" defaultValue={lead?.location ?? ""} placeholder="Bengaluru, Remote…" />
       </Field>
-      <Field label="Company size">
+      <Field label={isBrand ? "Brand size" : "Company size"}>
         <Input name="company_size" defaultValue={lead?.company_size ?? ""} placeholder="e.g. 11–50" />
       </Field>
       <Field label="Fit score (0–100)">
@@ -95,7 +116,9 @@ export function LeadFields({ kind, lead }: { kind: LeadKind; lead?: Lead }) {
       {!lead ? (
         <label className="flex items-center gap-2 text-xs text-muted sm:col-span-2">
           <input type="checkbox" name="allow_similar" className="accent-[var(--accent)]" />
-          Add even if a lead with the same phone number or a very similar name exists
+          {isBrand
+            ? "Add even if a brand with a very similar name exists"
+            : "Add even if a lead with the same phone number or a very similar name exists"}
         </label>
       ) : null}
       <div className="flex justify-end sm:col-span-2">

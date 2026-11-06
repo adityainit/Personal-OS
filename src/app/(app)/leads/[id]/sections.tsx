@@ -25,7 +25,7 @@ import { ActionButton, CopyButton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/page-header";
 import { CHANNELS, CHANNEL_LABEL, INTERACTION_LABEL, INTERACTION_TYPES } from "@/lib/domain/constants";
 import { formatPhone } from "@/lib/domain/phone";
-import type { Contact, FollowUp, Interaction, Lead, Outreach, Settings } from "@/lib/domain/types";
+import { describeRules, rulesFor, type Contact, type FollowUp, type Interaction, type Lead, type LeadKind, type Outreach, type Settings } from "@/lib/domain/types";
 import { cn, dueLabel, externalUrl, fmtDateTime, instagramUrl, relative } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -244,12 +244,12 @@ export function Contacts({ lead, contacts }: { lead: Lead; contacts: Contact[] }
 // ---------------------------------------------------------------------------
 // Outreach
 // ---------------------------------------------------------------------------
-function DraftFields({ o }: { o?: Outreach }) {
+function DraftFields({ o, kind }: { o?: Outreach; kind: LeadKind }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Channel">
-          <Select name="channel" defaultValue={o?.channel ?? "instagram_dm"}>
+          <Select name="channel" defaultValue={o?.channel ?? (kind === "brand" ? "instagram_dm" : "email")}>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
                 {CHANNEL_LABEL[c]}
@@ -276,7 +276,8 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
   const sent = outreach.filter((o) => o.status === "sent");
   const closed = ["won", "lost", "do_not_contact"].includes(lead.status);
   const sentCount = sent.length;
-  const defaultDays = sentCount === 0 ? settings.default_follow_up_days : settings.follow_up_gap_days;
+  const rules = rulesFor(settings, lead.kind);
+  const defaultDays = sentCount === 0 ? rules.first : rules.gap;
 
   return (
     <div className="flex flex-col gap-4">
@@ -291,7 +292,7 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
           action={
             <Dialog trigger={<><Plus /> New draft</>} title="New outreach draft" size="sm" wide>
               <ActionForm action={saveDraftAction.bind(null, lead.id)}>
-                <DraftFields />
+                <DraftFields kind={lead.kind} />
               </ActionForm>
             </Dialog>
           }
@@ -311,7 +312,7 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
                     <CopyButton text={o.subject ? `Subject: ${o.subject}\n\n${o.body}` : o.body} />
                     <Dialog trigger={<Pencil />} triggerTitle="Edit draft" title="Edit draft" variant="ghost" size="icon-sm" wide>
                       <ActionForm action={updateDraftAction.bind(null, o.id)} reset={false}>
-                        <DraftFields o={o} />
+                        <DraftFields o={o} kind={lead.kind} />
                       </ActionForm>
                     </Dialog>
                     <ActionButton action={deleteDraftAction.bind(null, o.id)} confirm="Delete?" variant="ghost" size="icon-sm" title="Delete draft">
@@ -513,7 +514,7 @@ export function FollowUps({ lead, followUps, settings }: { lead: Lead; followUps
         description={
           closed
             ? "This lead is closed — follow-ups are stopped."
-            : `Default: first follow-up after ${settings.default_follow_up_days} day(s), then every ${settings.follow_up_gap_days} day(s), max ${settings.max_follow_ups}.`
+            : `${lead.kind === "brand" ? "Brand deal" : "Freelance"} rules: ${describeRules(rulesFor(settings, lead.kind))}.`
         }
         action={
           !closed ? (
@@ -521,7 +522,7 @@ export function FollowUps({ lead, followUps, settings }: { lead: Lead; followUps
               <ActionForm action={setFollowUpAction.bind(null, lead.id)}>
                 <div className="flex flex-col gap-4">
                   <Field label="Due">
-                    <DateTimeField name="due_at" defaultDaysFromNow={settings.follow_up_gap_days} required />
+                    <DateTimeField name="due_at" defaultDaysFromNow={rulesFor(settings, lead.kind).gap} required />
                   </Field>
                   <Field label="Reason">
                     <Input name="reason" placeholder="Check in about proposal" />

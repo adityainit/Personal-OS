@@ -17,7 +17,8 @@ A private CRM for Instagram brand deals, freelance client acquisition, follow-up
 3. **Run the migrations in the SQL Editor, in this order, one file per query** (or `npm run db:link` then `npm run db:push`):
    1. `supabase/migrations/20261105000001_schema.sql`
    2. `supabase/migrations/20261105000002_logic.sql`
-   3. `supabase/migrations/20261106000003_contact_security.sql`: mandatory phone numbers, incomplete prospects, a database-level sign-up guard, follow-up fix, tighter permissions. It never edits or deletes existing records.
+   3. `supabase/migrations/20261106000003_contact_security.sql`: phone numbers, incomplete prospects, a database-level sign-up guard, follow-up fix, tighter permissions. It never edits or deletes existing records.
+   4. `supabase/migrations/20261106000004_per_kind_rules.sql`: separate rules for brand deals and freelancing (no phone number for brands, separate follow-up timing). It never edits or deletes existing leads.
 4. **Authentication settings** (dashboard → Authentication):
 
 | Setting | Value |
@@ -79,16 +80,21 @@ Fill in **Settings → Creator profile** first, so Claude can match brands to yo
 
 ## Lead rules
 
-Every new brand or freelance lead, whether added in the app or by Claude, must have:
+Instagram brand deals and freelancing work differently, whether a lead is added in the app or by Claude:
 
-| Required | Optional |
-|---|---|
-| Company / brand name · phone number with country code (validated per country) · a website **or** an Instagram/LinkedIn profile | Email · contact person · LinkedIn · Instagram · location · description |
+| | Instagram brand deals | Freelancing |
+|---|---|---|
+| **Required** | Brand name · Instagram handle **or** website | Company name · phone number with country code · a website **or** an Instagram/LinkedIn profile |
+| **Phone number** | Not asked for (you reach brands by DM or email) | Required, validated per country |
+| **Default outreach channel** | Instagram DM | Email |
+| **Default follow-ups** | First after 3 days, then every 4 days, up to 2 | First after 2 days, then every 3 days, up to 3 (your earlier rules are carried over) |
+| **Follow-up shortcuts** | Open Instagram | Call · WhatsApp |
 
+- Follow-up timing for each is set in **Settings → Follow-up rules**. The Follow-ups page can show brand deals and freelancing separately.
 - Phone numbers are checked against the real numbering rules of the selected country and stored in international format. This is enforced in three places: the form, the shared server code the MCP tools use, and a database trigger.
 - Email is never required, and Claude is instructed never to guess contact details.
-- If Claude researches a business but cannot verify a phone number, it is saved as an **incomplete prospect**. It is shown separately on the Brand Deals / Freelancing pages, is not a lead, and is not counted as qualified. Adding a phone number promotes it to a full lead.
-- Leads that existed before this rule and have no phone number are **left as they are**. They are flagged "Missing" in the list, and only their status can change until a number is added.
+- If Claude researches a **freelance** business but cannot verify a phone number, it is saved as an **incomplete prospect**: shown separately, not a lead, not counted as qualified. Adding a phone number promotes it to a full lead.
+- Freelance leads that existed before the phone rule and have no number are **left as they are**. They are flagged "Missing", and only their status can change until a number is added.
 
 ## How it works
 
@@ -102,9 +108,9 @@ Web UI (server actions) ───────┘   same repository layer (src/li
 ```
 
 - The business rules live in the database, so the website and Claude behave identically:
-  - Marking a draft as sent sets the lead to *contacted* and schedules a follow-up (default: 1 day, then every 3 days, up to 3 follow-ups; change this in Settings).
+  - Marking a draft as sent sets the lead to *contacted* and schedules a follow-up using that lead's rules (brand or freelance; change them in Settings).
   - Recording a **reply** cancels pending follow-ups. A **decline**, **won**, **lost** or **do not contact** stops them for good.
-  - Duplicates are blocked by website domain and Instagram handle; the same phone number or a very similar name triggers a warning. A second message on the same channel within 20 hours is blocked.
+  - Duplicates are blocked by website domain and Instagram handle; for freelance leads the same phone number, and for any lead a very similar name, triggers a warning. A second message on the same channel within 20 hours is blocked.
   - Every change goes into an append-only activity log tagged *you*, *Claude* or *automatic*.
   - A `pg_cron` job runs every 15 minutes, flags follow-ups that have come due and adds a notification.
 - The MCP server has 28 tools (`src/lib/mcp/tools.ts`). None of them sends or deletes anything.

@@ -5,6 +5,7 @@ import * as repo from "@/lib/domain/repo";
 import { CHANNELS, INTERACTION_TYPES, LEAD_STATUSES } from "@/lib/domain/constants";
 import { compact, creatorProfileSchema } from "@/lib/domain/schemas";
 import { validatePhone } from "@/lib/domain/phone";
+import { rulesFor } from "@/lib/domain/types";
 import type { Db } from "@/lib/domain/repo";
 import type { Lead } from "@/lib/domain/types";
 import { createTokenClient } from "@/lib/supabase/server";
@@ -20,12 +21,17 @@ Your role: research assistant and CRM operator. Aditya personally handles ALL co
 - Do real research (use web search) before saving a lead: what the business does, products/services, customers,
   marketing / past creator collaborations (brands) or likely website/frontend/backend/UI-UX/automation needs (freelance),
   why it fits Aditya, the best service or collaboration to offer, and a fit_score 0-100. Only save qualified prospects.
-- PHONE NUMBER IS MANDATORY for every lead (country code + number, e.g. phone_country "IN", phone_number "98765 43210").
-  Only use a phone number you actually found on an official/public source. NEVER guess, invent or "fill in" a number,
-  and never reuse another business's number. Email is optional: if you cannot find a public email, leave it out.
-- If you researched a business but could not verify a phone number, do NOT call create_lead. Call save_incomplete_prospect
-  instead (it keeps the research, but the business is not a lead and not "qualified"). When Aditya later gives you the
-  number, call promote_prospect.
+- Brand deals and freelancing have DIFFERENT rules:
+  * INSTAGRAM BRAND DEALS (kind=brand): NO phone number. A brand lead needs its name and its Instagram handle
+    (or website). Aditya reaches brands by Instagram DM or email. Do not look for or add phone numbers for brands.
+  * FREELANCE (kind=freelance): PHONE NUMBER IS MANDATORY (country code + number, e.g. phone_country "IN",
+    phone_number "98765 43210") plus a website or social profile.
+- Only use contact details you actually found on an official/public source. NEVER guess, invent or "fill in" a phone
+  number or email, and never reuse another business's details. Email is optional: if you can't find one, leave it out.
+- If you researched a FREELANCE business but could not verify a phone number, do NOT call create_lead. Call
+  save_incomplete_prospect instead (it keeps the research, but it is not a lead). When Aditya later gives you the number,
+  call promote_prospect. Brands never need this.
+- Follow-up timing is separate for brands and freelance clients (see get_creator_profile → follow_up_rules).
 - Contact details must be publicly available business contacts; always include source_url for each.
 - For brands, read get_creator_profile first and tailor proposals to Aditya's niche, audience and content.
 - Prepare SEPARATE drafts per channel (instagram_dm short and casual; email with subject, more detailed).
@@ -152,9 +158,9 @@ export function registerTools(server: McpServer) {
       return {
         creator_profile: s.creator_profile,
         follow_up_rules: {
-          default_follow_up_days: s.default_follow_up_days,
-          follow_up_gap_days: s.follow_up_gap_days,
-          max_follow_ups: s.max_follow_ups,
+          brand: rulesFor(s, "brand"),
+          freelance: rulesFor(s, "freelance"),
+          meaning: "first = days after the first message, gap = days between later follow-ups, max = follow-ups before stopping",
         },
         note: Object.keys(s.creator_profile ?? {}).length
           ? undefined
@@ -236,7 +242,7 @@ export function registerTools(server: McpServer) {
     {
       title: "Add lead to CRM",
       description:
-        "Save a researched, QUALIFIED brand (kind=brand) or freelance prospect (kind=freelance) with research, opportunity, fit score, public contacts and outreach drafts. A verified phone number (phone_country + phone_number) and a website or social profile are REQUIRED; email is optional. If no verified phone number was found, use save_incomplete_prospect instead. Refuses duplicates and returns the existing lead instead.",
+        "Save a researched, QUALIFIED lead with research, opportunity, fit score, public contacts and outreach drafts. kind=brand (Instagram brand deal): needs the brand's instagram_handle or website; do NOT pass a phone number. kind=freelance: a verified phone number (phone_country + phone_number) and a website or social profile are REQUIRED — if no verified phone was found, use save_incomplete_prospect instead. Email is always optional. Refuses duplicates and returns the existing lead instead.",
       inputSchema: z.object({
         kind,
         ...leadInputShape,
@@ -255,9 +261,9 @@ export function registerTools(server: McpServer) {
       try {
         res = await repo.createLead(db, { ...lead, source: "claude" }, { allowSimilar: allow_similar });
       } catch (e) {
-        if (e instanceof repo.RepoError && e.code === "invalid" && /^phone_number:/.test(e.message)) {
+        if (e instanceof repo.RepoError && e.code === "invalid" && /^phone number:/i.test(e.message)) {
           throw new repo.RepoError(
-            `NOT SAVED — ${e.message}. A lead needs a verified, valid phone number. If you could not find one, call save_incomplete_prospect with the research instead (do not invent a number).`,
+            `NOT SAVED — ${e.message}. A freelance lead needs a verified, valid phone number. If you could not find one, call save_incomplete_prospect with the research instead (do not invent a number).`,
             "invalid",
           );
         }
@@ -302,7 +308,7 @@ export function registerTools(server: McpServer) {
     "update_lead",
     {
       title: "Update lead",
-      description: "Edit a lead's details or research. Only provided fields change. Leads without a phone number can only have their status changed until a valid phone is added.",
+      description: "Edit a lead's details or research. Only provided fields change. Brand leads never need a phone number. Freelance leads without a phone number can only have their status changed until a valid phone is added.",
       inputSchema: z.object({ lead: leadRef, ...Object.fromEntries(Object.entries(leadInputShape).map(([k, v]) => [k, v.optional()])), ...phoneShape, status: status.optional() }),
       annotations: WRITE,
     },
@@ -395,9 +401,9 @@ export function registerTools(server: McpServer) {
   server.registerTool(
     "save_incomplete_prospect",
     {
-      title: "Save incomplete prospect (no verified phone)",
+      title: "Save incomplete freelance prospect (no verified phone)",
       description:
-        "Keep the research for a business whose phone number you could NOT verify. It is stored as an incomplete prospect — not a lead, not qualified, not in the pipeline. Never invent a phone number. Aditya (or promote_prospect) adds the number later.",
+        "FREELANCE ONLY. Keep the research for a business whose phone number you could NOT verify. It is stored as an incomplete prospect — not a lead, not qualified, not in the pipeline. Never invent a phone number. Aditya (or promote_prospect) adds the number later. Brands don't need a phone: use create_lead for them.",
       inputSchema: z.object({
         kind,
         ...leadInputShape,
@@ -442,11 +448,11 @@ export function registerTools(server: McpServer) {
     "promote_prospect",
     {
       title: "Promote prospect to lead",
-      description: "Turn an incomplete prospect into a lead once Aditya has given you a valid phone number. Keeps all research.",
-      inputSchema: z.object({ prospect_id: z.uuid(), phone_country: z.string(), phone_number: z.string() }),
+      description: "Turn an incomplete prospect into a lead. Freelance prospects need the valid phone number Aditya gave you; brand prospects need no phone. Keeps all research.",
+      inputSchema: z.object({ prospect_id: z.uuid(), phone_country: z.string().optional(), phone_number: z.string().optional() }),
       annotations: WRITE,
     },
-    run(async (db, a: { prospect_id: string; phone_country: string; phone_number: string }) => {
+    run(async (db, a: { prospect_id: string; phone_country?: string; phone_number?: string }) => {
       const lead = await repo.promoteProspect(db, a.prospect_id, { phone_number: a.phone_number, phone_country: a.phone_country });
       return { id: lead.id, name: lead.name, status: lead.status, url: link(lead.id) };
     }),
@@ -556,16 +562,22 @@ export function registerTools(server: McpServer) {
     "list_follow_ups",
     {
       title: "List follow-ups",
-      description: "Pending follow-ups: overdue, due today (India time), upcoming, or all.",
-      inputSchema: z.object({ range: z.enum(["overdue", "today", "upcoming", "all", "due"]).optional().describe("'due' = overdue + today (default)") }),
+      description: "Pending follow-ups: overdue, due today (India time), upcoming, or all. Optionally only brand deals or only freelance.",
+      inputSchema: z.object({
+        range: z.enum(["overdue", "today", "upcoming", "all", "due"]).optional().describe("'due' = overdue + today (default)"),
+        kind: kind.optional().describe("brand = Instagram brand deals, freelance = freelance clients; omit for both"),
+      }),
       annotations: RO,
     },
-    run(async (db, a: { range?: "overdue" | "today" | "upcoming" | "all" | "due" }) => {
+    run(async (db, a: { range?: "overdue" | "today" | "upcoming" | "all" | "due"; kind?: "brand" | "freelance" }) => {
       const r = a.range ?? "due";
       const items =
         r === "due"
-          ? [...(await repo.listFollowUps(db, { range: "overdue" })), ...(await repo.listFollowUps(db, { range: "today" }))]
-          : await repo.listFollowUps(db, { range: r });
+          ? [
+              ...(await repo.listFollowUps(db, { range: "overdue", kind: a.kind })),
+              ...(await repo.listFollowUps(db, { range: "today", kind: a.kind })),
+            ]
+          : await repo.listFollowUps(db, { range: r, kind: a.kind });
       return {
         count: items.length,
         follow_ups: items.map((f) => ({ id: f.id, lead: f.lead.name, lead_id: f.lead.id, kind: f.lead.kind, due_at: f.due_at, attempt: f.attempt, reason: f.reason })),

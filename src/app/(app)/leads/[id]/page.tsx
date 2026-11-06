@@ -124,7 +124,7 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
         </div>
       </div>
 
-      {!lead.phone_e164 ? (
+      {lead.kind === "freelance" && !lead.phone_e164 ? (
         <div role="alert" className="mb-5 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
           <span>

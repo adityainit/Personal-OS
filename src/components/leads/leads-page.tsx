@@ -52,10 +52,12 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
     noPhone: str(searchParams.phone) === "missing",
     sort: (["updated", "created", "fit", "name"] as const).find((s) => s === str(searchParams.sort)) ?? "updated",
   };
+  // Phone numbers (and so "incomplete prospects") only matter for freelance leads.
+  const isFreelance = kind === "freelance";
   const [leads, prospects, noPhoneAll] = await Promise.all([
-    listLeads(supabase, filters),
+    listLeads(supabase, { ...filters, noPhone: isFreelance && filters.noPhone }),
     listProspects(supabase, kind),
-    listLeads(supabase, { kind, noPhone: true, limit: 500 }),
+    isFreelance ? listLeads(supabase, { kind, noPhone: true, limit: 500 }) : Promise.resolve([]),
   ]);
   const copy = COPY[kind];
   const base = kind === "brand" ? "/brands" : "/freelance";
@@ -77,7 +79,12 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
             <a href={`/api/export?type=leads&kind=${kind}`} className={buttonClass("secondary", "md")}>
               <Download /> CSV
             </a>
-            <Dialog trigger={<><Plus /> {copy.add}</>} title={copy.add} wide description="Duplicates are detected by website and Instagram handle.">
+            <Dialog
+              trigger={<><Plus /> {copy.add}</>}
+              title={copy.add}
+              wide
+              description={isFreelance ? "Duplicates are detected by website, Instagram handle and phone number." : "Duplicates are detected by Instagram handle and website."}
+            >
               <ActionForm action={createLeadAction}>
                 <LeadFields kind={kind} />
               </ActionForm>
@@ -103,7 +110,7 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
           <input type="hidden" name="view" value={view} />
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <Input name="q" defaultValue={filters.q} placeholder="Filter by name, domain, @handle, phone" className="pl-8" />
+            <Input name="q" defaultValue={filters.q} placeholder={isFreelance ? "Filter by name, domain, @handle, phone" : "Filter by name, @handle, domain"} className="pl-8" />
           </div>
           <Select name="status" defaultValue={status ?? ""} className="w-auto" aria-label="Status">
             <option value="">All statuses</option>
@@ -170,7 +177,7 @@ export async function LeadsPage({ kind, searchParams }: { kind: LeadKind; search
         ) : view === "board" ? (
           <LeadsBoard leads={leads} />
         ) : (
-          <LeadsTable leads={leads} />
+          <LeadsTable leads={leads} kind={kind} />
         )}
       </Card>
     </>

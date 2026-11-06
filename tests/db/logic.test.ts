@@ -103,18 +103,21 @@ describe("outreach & follow-ups", () => {
     expect((await lead(id)).status).toBe("drafted");
   });
 
-  it("marking sent sets contacted and schedules a follow-up after the default interval", async () => {
-    const id = await newLead(USER_A, { name: "Sendee", website: "sendee.com" });
-    const o = await draft(id);
-    const [{ mark_outreach_sent: res }] = await as<{ mark_outreach_sent: { follow_up: { due_at: string } } }>(
-      db, USER_A, "select mark_outreach_sent($1)", [o]);
-    expect(res.follow_up).not.toBeNull();
-    expect((await lead(id)).status).toBe("contacted");
-    const fu = await followUps(id);
-    expect(fu).toHaveLength(1);
-    const hours = (new Date(fu[0].due_at).getTime() - Date.now()) / 3.6e6;
-    expect(hours).toBeGreaterThan(23);
-    expect(hours).toBeLessThan(25);
+  it("marking sent sets contacted and schedules a follow-up using the lead kind's rules", async () => {
+    // Defaults for a new account: brand 3 days (DM-friendly), freelance 2 days.
+    for (const [kind, days] of [["brand", 3], ["freelance", 2]] as const) {
+      const id = await newLead(USER_A, { kind, name: `Sendee ${kind}`, website: `sendee-${kind}.com` });
+      const o = await draft(id);
+      const [{ mark_outreach_sent: res }] = await as<{ mark_outreach_sent: { follow_up: { due_at: string } } }>(
+        db, USER_A, "select mark_outreach_sent($1)", [o]);
+      expect(res.follow_up).not.toBeNull();
+      expect((await lead(id)).status).toBe("contacted");
+      const fu = await followUps(id);
+      expect(fu).toHaveLength(1);
+      const hours = (new Date(fu[0].due_at).getTime() - Date.now()) / 3.6e6;
+      expect(hours).toBeGreaterThan(days * 24 - 1);
+      expect(hours).toBeLessThan(days * 24 + 1);
+    }
   });
 
   it("blocks duplicate outreach on the same channel within 20h unless forced", async () => {

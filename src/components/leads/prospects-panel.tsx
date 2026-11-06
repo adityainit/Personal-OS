@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, ExternalLink, Phone, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Bot, ExternalLink, Phone, Trash2 } from "lucide-react";
 import { deleteProspectAction, promoteProspectAction } from "@/actions";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { FitScore } from "@/components/ui/badge";
@@ -11,7 +11,8 @@ import { externalUrl, relative } from "@/lib/utils";
 
 /**
  * Researched businesses with no verified phone number. They are kept out of the
- * pipeline until a valid phone number is added.
+ * pipeline until a valid phone number is added. Brand deals don't need a phone number,
+ * so older brand prospects can be turned into leads directly.
  */
 export function ProspectsPanel({ prospects }: { prospects: IncompleteProspect[] }) {
   if (prospects.length === 0) return null;
@@ -23,7 +24,11 @@ export function ProspectsPanel({ prospects }: { prospects: IncompleteProspect[] 
             <AlertTriangle className="size-4 text-warning" /> Incomplete prospects ({prospects.length})
           </span>
         }
-        description="Researched, but no verified phone number. They are not leads yet — add a phone number to promote one."
+        description={
+          prospects.every((p) => p.kind === "brand")
+            ? "Saved earlier because no phone number was found. Brand deals don't need one any more — turn them into leads."
+            : "Researched, but no verified phone number. They are not leads yet — add a phone number to promote one."
+        }
       />
       <ul className="divide-y divide-border">
         {prospects.map((p) => (
@@ -52,16 +57,24 @@ export function ProspectsPanel({ prospects }: { prospects: IncompleteProspect[] 
               ) : null}
             </div>
             <div className="flex items-center gap-1">
-              <Dialog trigger={<><Phone /> Add phone</>} title={`Add phone for ${p.name}`} description="Saves it as a lead with all its research." size="sm">
+              {p.kind === "brand" ? (
                 <ActionForm action={promoteProspectAction.bind(null, p.id)}>
-                  <div className="flex flex-col gap-4">
-                    <PhoneField />
-                    <div className="flex justify-end">
-                      <SubmitButton>Save as lead</SubmitButton>
-                    </div>
-                  </div>
+                  <SubmitButton variant="secondary" size="sm">
+                    <ArrowUpRight /> Make lead
+                  </SubmitButton>
                 </ActionForm>
-              </Dialog>
+              ) : (
+                <Dialog trigger={<><Phone /> Add phone</>} title={`Add phone for ${p.name}`} description="Saves it as a lead with all its research." size="sm">
+                  <ActionForm action={promoteProspectAction.bind(null, p.id)}>
+                    <div className="flex flex-col gap-4">
+                      <PhoneField />
+                      <div className="flex justify-end">
+                        <SubmitButton>Save as lead</SubmitButton>
+                      </div>
+                    </div>
+                  </ActionForm>
+                </Dialog>
+              )}
               <ActionButton action={deleteProspectAction.bind(null, p.id)} confirm="Delete?" variant="ghost" size="icon-sm" title="Delete prospect">
                 <Trash2 />
               </ActionButton>

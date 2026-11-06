@@ -20,16 +20,30 @@ async function insertLead(user: string, fields: Record<string, unknown>) {
   );
 }
 
-describe("mandatory phone number", () => {
-  it("rejects a new lead with no phone", async () => {
-    await expect(insertLead(USER_A, { name: "No Phone", website: "nophone.com" })).rejects.toThrow(/valid phone number/);
+describe("phone number: required for freelance, optional for brands", () => {
+  it("rejects a new freelance lead with no phone", async () => {
+    await expect(insertLead(USER_A, { kind: "freelance", name: "No Phone", website: "nophone.com" })).rejects.toThrow(
+      /required for freelance/,
+    );
+  });
+
+  it("accepts a brand lead with no phone (and drops a stray country)", async () => {
+    const [{ id }] = await insertLead(USER_A, { name: "DM Brand", instagram_handle: "@dmbrand", phone_country: "IN" });
+    const [row] = await asSystem<{ phone_e164: string | null; phone_country: string | null }>(
+      db, "select phone_e164, phone_country from leads where id = $1", [id]);
+    expect(row).toEqual({ phone_e164: null, phone_country: null });
+  });
+
+  it("still validates a phone number that is given, for both kinds", async () => {
+    await expect(insertLead(USER_A, { name: "Bad Brand Phone", website: "badbrandphone.com", phone_e164: "12345", phone_country: "IN" }))
+      .rejects.toThrow(/international format/);
   });
 
   it("rejects malformed numbers and missing country", async () => {
     for (const bad of ["9876543210", "+0123456789", "+91 98765 43210", "+12", "+1234567890123456", "abc"]) {
       await expect(
-        insertLead(USER_A, { name: "Bad " + bad, website: `bad${bad.length}.com`, phone_e164: bad, phone_country: "IN" }),
-      ).rejects.toThrow(/valid phone number/);
+        insertLead(USER_A, { kind: "freelance", name: "Bad " + bad, website: `bad${bad.length}.com`, phone_e164: bad, phone_country: "IN" }),
+      ).rejects.toThrow(/international format/);
     }
     await expect(
       insertLead(USER_A, { name: "No Country", website: "nocountry.com", phone_e164: "+919876543210" }),
@@ -41,9 +55,14 @@ describe("mandatory phone number", () => {
     expect(id).toBeTruthy();
   });
 
-  it("does not let an update clear the phone", async () => {
-    const [{ id }] = await insertLead(USER_A, { name: "Keeper", website: "keeper.com", ...PHONE });
-    await expect(as(db, USER_A, "update leads set phone_e164 = null where id = $1", [id])).rejects.toThrow(/valid phone number/);
+  it("does not let an update clear a freelance lead's phone", async () => {
+    const [{ id }] = await insertLead(USER_A, { kind: "freelance", name: "Keeper", website: "keeper.com", ...PHONE });
+    await expect(as(db, USER_A, "update leads set phone_e164 = null where id = $1", [id])).rejects.toThrow(/required for freelance/);
+  });
+
+  it("lets a brand lead's phone be removed", async () => {
+    const [{ id }] = await insertLead(USER_A, { name: "Brand Keeper", website: "brandkeeper.com", ...PHONE });
+    await as(db, USER_A, "update leads set phone_e164 = null where id = $1", [id]);
   });
 
   it("legacy leads without a phone stay editable by status and are left untouched", async () => {
@@ -118,9 +137,9 @@ describe("function permissions", () => {
 });
 
 describe("follow-up limit", () => {
-  async function sendN(n: number, max: number) {
-    await as(db, USER_A, "update settings set max_follow_ups = $1", [max]);
-    const [{ id }] = await insertLead(USER_A, { name: `Limit ${n}-${max}`, website: `limit${n}x${max}.com`, ...PHONE });
+  async function sendN(n: number, max: number, kind: "brand" | "freelance" = "freelance") {
+    await as(db, USER_A, `update settings set ${kind}_max_follow_ups = $1`, [max]);
+    const [{ id }] = await insertLead(USER_A, { kind, name: `Limit ${kind} ${n}-${max}`, website: `limit${kind}${n}x${max}.com`, ...PHONE });
     const out: (unknown | null)[] = [];
     for (let i = 0; i < n; i++) {
       const [{ id: o }] = await as<{ id: string }>(db, USER_A,
@@ -139,6 +158,15 @@ describe("follow-up limit", () => {
 
   it("max 0 means no follow-ups at all", async () => {
     expect((await sendN(1, 0))[0]).toBeNull();
+  });
+
+  it("brand and freelance limits are independent", async () => {
+    await as(db, USER_A, "update settings set freelance_max_follow_ups = 3");
+    const brand = await sendN(3, 1, "brand");
+    expect(brand.map((x) => x !== null)).toEqual([true, false, false]);
+    const [{ freelance_max_follow_ups: f }] = await as<{ freelance_max_follow_ups: number }>(
+      db, USER_A, "select freelance_max_follow_ups from settings");
+    expect(f).toBe(3);
   });
 });
 
