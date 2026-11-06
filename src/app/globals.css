@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f2f2f4;
+  --border: #e4e4e7;
+  --fg: #18181b;
+  /* Text tokens below are tuned to WCAG AA (4.5:1) on bg, surface, surface-2 and
+     their 10-15% tints. tests/unit/contrast.test.ts enforces this. */
+  --muted: #6c6c75;
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --ring: #6366f1;
+  --danger: #bd0024;
+  --danger-fg: #ffffff;
+  --success: #007043;
+  --warning: #a54300;
+
+  /* Chart palette (validated for light + dark contrast) */
+  --chart-1: #4f46e5;
+  --chart-2: #0891b2;
+  --chart-3: #d97706;
+  --chart-4: #db2777;
+  --chart-grid: #e4e4e7;
+}
+
+.dark {
+  --bg: #09090b;
+  --surface: #111114;
+  --surface-2: #18181c;
+  --border: #27272a;
+  --fg: #f4f4f5;
+  --muted: #a1a1aa;
+  --accent: #818cf8;
+  --accent-fg: #0b0b12;
+  --accent-soft: #1e1b4b;
+  --ring: #818cf8;
+  --danger: #fb7185;
+  --danger-fg: #1a0509;
+  --success: #34d399;
+  --warning: #fbbf24;
+
+  --chart-1: #6366f1;
+  --chart-2: #0891b2;
+  --chart-3: #d97706;
+  --chart-4: #db2777;
+  --chart-grid: #27272a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: light;
+  /* Reserve the scrollbar space so the layout does not jump between short and long pages. */
+  scrollbar-gutter: stable;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Native <select> lists are drawn by the OS. On some platforms the open list keeps a
+   light background while the text inherits the theme colour (light-on-white = invisible).
+   Always set both explicitly from the semantic tokens. */
+option,
+optgroup {
+  background-color: var(--surface);
+  color: var(--fg);
+}
+option:disabled {
+  color: var(--muted);
+}
+
+/* Placeholders use the muted token at full opacity (AA contrast). */
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* Research / notes rendered as pre-wrapped prose */
+.prose-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+}

@@ -1,0 +1,119 @@
+import { Database, Download } from "lucide-react";
+import type { Metadata } from "next";
+import { saveCreatorProfileAction, saveFollowUpRulesAction } from "@/actions";
+import { InstagramIcon } from "@/components/icons";
+import { ActionForm, SubmitButton } from "@/components/ui/action-form";
+import { buttonClass } from "@/components/ui/button";
+import { Card, CardHeader } from "@/components/ui/card";
+import { Field, Input, Textarea } from "@/components/ui/form";
+import { PageHeader } from "@/components/ui/page-header";
+import { getSettings } from "@/lib/domain/repo";
+import { requireUser } from "@/lib/supabase/server";
+
+export const metadata: Metadata = { title: "Settings" };
+
+const EXPORTS: [string, string][] = [
+  ["leads", "All leads"],
+  ["deals", "Deals"],
+  ["payments", "Payments"],
+  ["follow_ups", "Follow-ups"],
+  ["activities", "Activity log"],
+];
+
+export default async function SettingsPage() {
+  const { supabase, user } = await requireUser();
+  const s = await getSettings(supabase);
+  const p = s.creator_profile ?? {};
+
+  return (
+    <>
+      <PageHeader title="Settings" description={`Signed in as ${user.email}`} />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader
+            title={<span className="inline-flex items-center gap-2"><InstagramIcon className="size-4" /> Creator profile</span>}
+            description="Claude reads this to find brands and clients that fit you. Keep it current."
+          />
+          <ActionForm action={saveCreatorProfileAction} reset={false} closeDialog={false} className="grid gap-4 p-4 sm:grid-cols-2">
+            <Field label="Instagram handle">
+              <Input name="instagram_handle" defaultValue={p.instagram_handle ?? ""} placeholder="@aditya" />
+            </Field>
+            <Field label="Niche">
+              <Input name="niche" defaultValue={p.niche ?? ""} placeholder="AI, coding, developer tools, tech education" />
+            </Field>
+            <Field label="Followers">
+              <Input name="followers" type="number" min={0} defaultValue={p.followers ?? ""} />
+            </Field>
+            <Field label="Average views per reel">
+              <Input name="avg_views" type="number" min={0} defaultValue={p.avg_views ?? ""} />
+            </Field>
+            <Field label="Engagement rate (%)">
+              <Input name="engagement_rate" inputMode="decimal" defaultValue={p.engagement_rate ?? ""} />
+            </Field>
+            <Field label="Portfolio / website">
+              <Input name="portfolio_url" defaultValue={p.portfolio_url ?? ""} />
+            </Field>
+            <Field label="Audience" className="sm:col-span-2">
+              <Textarea name="audience" rows={2} defaultValue={p.audience ?? ""} placeholder="Students & early-career developers in India, 18–30…" />
+            </Field>
+            <Field label="Content style" className="sm:col-span-2">
+              <Textarea name="content_style" rows={2} defaultValue={p.content_style ?? ""} placeholder="Short tutorials, AI tool reviews, project builds…" />
+            </Field>
+            <Field label="Past collaborations" className="sm:col-span-2">
+              <Textarea name="past_collaborations" rows={2} defaultValue={p.past_collaborations ?? ""} />
+            </Field>
+            <Field label="Rates" className="sm:col-span-2">
+              <Textarea name="rates" rows={2} defaultValue={p.rates ?? ""} placeholder="Reel ₹X, story set ₹Y…" />
+            </Field>
+            <Field label="Freelance skills & services" className="sm:col-span-2">
+              <Textarea name="freelance_skills" rows={3} defaultValue={p.freelance_skills ?? ""} placeholder="React/Next.js, Node, Supabase, UI/UX, automation…" />
+            </Field>
+            <Field label="Short bio" className="sm:col-span-2">
+              <Textarea name="bio" rows={3} defaultValue={p.bio ?? ""} />
+            </Field>
+            <div className="flex justify-end sm:col-span-2">
+              <SubmitButton>Save profile</SubmitButton>
+            </div>
+          </ActionForm>
+        </Card>
+
+        <div className="flex flex-col gap-4">
+          <Card id="follow-up-rules">
+            <CardHeader title="Follow-up rules" description="Applied when you mark a message as sent." />
+            <ActionForm action={saveFollowUpRulesAction} reset={false} closeDialog={false} className="flex flex-col gap-4 p-4">
+              <Field label="First follow-up after (days)" hint="0 = don't schedule automatically">
+                <Input name="default_follow_up_days" type="number" min={0} max={90} defaultValue={s.default_follow_up_days} />
+              </Field>
+              <Field label="Then every (days)">
+                <Input name="follow_up_gap_days" type="number" min={1} max={90} defaultValue={s.follow_up_gap_days} />
+              </Field>
+              <Field label="Maximum follow-ups" hint="Stops scheduling after this many follow-ups without a reply">
+                <Input name="max_follow_ups" type="number" min={0} max={20} defaultValue={s.max_follow_ups} />
+              </Field>
+              <div className="flex justify-end">
+                <SubmitButton>Save rules</SubmitButton>
+              </div>
+            </ActionForm>
+          </Card>
+
+          <Card>
+            <CardHeader title={<span className="inline-flex items-center gap-2"><Database className="size-4" /> Export & backup</span>} />
+            <div className="flex flex-col gap-3 p-4">
+              <a href="/api/export?type=backup" className={buttonClass("primary", "md", "justify-center")}>
+                <Download /> Full backup (JSON)
+              </a>
+              <div className="grid grid-cols-2 gap-2">
+                {EXPORTS.map(([t, l]) => (
+                  <a key={t} href={`/api/export?type=${t}`} className={buttonClass("secondary", "sm", "justify-center")}>
+                    {l}
+                  </a>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted">Download a backup regularly: the free Supabase plan has no downloadable backups.</p>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}
