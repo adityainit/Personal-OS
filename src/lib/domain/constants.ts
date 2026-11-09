@@ -1,4 +1,4 @@
-import type { DealStatus, InteractionType, LeadStatus, OutreachChannel } from "./types";
+import type { DealStatus, InteractionType, LeadKind, LeadStatus, OutreachChannel } from "./types";
 
 export const LEAD_STATUSES: LeadStatus[] = [
   "new",
@@ -50,13 +50,24 @@ export const STATUS_TONE: Record<LeadStatus, string> = {
   do_not_contact: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400",
 };
 
-export const CHANNELS: OutreachChannel[] = ["instagram_dm", "email", "linkedin", "other"];
+export const CHANNELS: OutreachChannel[] = ["instagram_dm", "whatsapp", "email", "linkedin", "other"];
 export const CHANNEL_LABEL: Record<OutreachChannel, string> = {
   instagram_dm: "Instagram DM",
+  whatsapp: "WhatsApp",
   email: "Email",
   linkedin: "LinkedIn",
   other: "Other",
 };
+
+/** Outreach channels allowed per pipeline; the first one is the default for new drafts. */
+export const CHANNELS_FOR: Record<LeadKind, OutreachChannel[]> = {
+  brand: ["instagram_dm", "email", "linkedin", "other"],
+  freelance: ["whatsapp", "email"],
+};
+
+export const KIND_LABEL: Record<LeadKind, string> = { brand: "Brand deal", freelance: "Freelance" };
+/** Where each pipeline's list lives. */
+export const KIND_PATH: Record<LeadKind, string> = { brand: "/brands", freelance: "/freelance" };
 
 export const INTERACTION_TYPES: InteractionType[] = ["reply", "note", "call", "meeting", "negotiation", "decline"];
 export const INTERACTION_LABEL: Record<InteractionType, string> = {

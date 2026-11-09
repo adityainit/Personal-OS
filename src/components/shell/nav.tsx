@@ -4,6 +4,7 @@ import {
   Activity,
   Bot,
   CalendarClock,
+  BriefcaseBusiness,
   ChartColumn,
   IndianRupee,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/brands", label: "Brand Deals", icon: InstagramIcon },
+  { href: "/freelance", label: "Freelancing", icon: BriefcaseBusiness },
   { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, badge: "followUps" as const },
   { href: "/revenue", label: "Revenue", icon: IndianRupee },
   { href: "/reports", label: "Reports", icon: ChartColumn },

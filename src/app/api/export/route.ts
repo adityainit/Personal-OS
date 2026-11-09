@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
         return file(JSON.stringify(backup, null, 2), `personal-os-backup-${stamp}.json`, "application/json");
       }
       case "leads": {
-        const rows = await all(supabase, "leads");
+        const kind = sp.get("kind");
+        const rows = (await all(supabase, "leads")).filter((r) => !kind || r.kind === kind);
         const contacts = await all(supabase, "contacts");
         const byLead = new Map<string, string[]>();
         for (const c of contacts) {
@@ -56,11 +57,12 @@ export async function GET(req: NextRequest) {
         }
         const out = rows.map((r) => ({ ...r, contacts: byLead.get(r.id as string)?.join("; ") ?? "" }));
         const cols = [
-          "name", "status", "fit_score", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
+          "name", "kind", "status", "fit_score", "phone_e164", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
           "suggested_service", "opportunity", "why_fit", "description", "research", "contacts", "tags", "source",
           "last_contacted_at", "created_at", "updated_at", "id",
         ];
-        return file(toCsv(out, cols), `brand-leads-${stamp}.csv`, "text/csv");
+        const prefix = kind === "freelance" ? "freelance-clients" : kind === "brand" ? "brand-leads" : "leads";
+        return file(toCsv(out, cols), `${prefix}-${stamp}.csv`, "text/csv");
       }
       case "deals": {
         const deals = await all(supabase, "deals", "*, payments(amount)");

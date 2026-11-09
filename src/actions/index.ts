@@ -9,7 +9,9 @@ import {
   firstError,
   followUpRulesSchema,
   formToObject,
+  freelanceFollowUpRulesSchema,
 } from "@/lib/domain/schemas";
+import { KIND_PATH } from "@/lib/domain/constants";
 import type { LeadStatus } from "@/lib/domain/types";
 import { createClient, requireUser } from "@/lib/supabase/server";
 import { fail, ok, type ActionResult } from "./result";
@@ -72,9 +74,10 @@ export async function setLeadStatusAction(id: string, status: LeadStatus): Promi
 export async function deleteLeadAction(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser();
+    const lead = await repo.getLead(supabase, id);
     await repo.deleteLead(supabase, id);
     refresh();
-    return ok("Lead deleted", { redirect: "/brands" });
+    return ok("Lead deleted", { redirect: KIND_PATH[lead.kind] });
   } catch (e) {
     return fail(e);
   }
@@ -365,6 +368,19 @@ export async function saveFollowUpRulesAction(_: ActionResult | null, fd: FormDa
     await repo.updateSettings(supabase, parsed.data);
     refresh();
     return ok("Follow-up rules saved");
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveFreelanceFollowUpRulesAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireUser();
+    const parsed = freelanceFollowUpRulesSchema.safeParse(formToObject(fd));
+    if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
+    await repo.updateSettings(supabase, parsed.data);
+    refresh();
+    return ok("Freelance follow-up rules saved");
   } catch (e) {
     return fail(e);
   }

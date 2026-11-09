@@ -9,11 +9,13 @@ import { requireUser } from "@/lib/supabase/server";
 const PROMPTS: [string, string][] = [
   ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with their Instagram handle, any public contacts, and separate Instagram DM and email drafts."],
   ["Add a brand", "Add boAt (@boat.nirvana) to my brand deals — research them first and draft a DM."],
+  ["Freelance discovery", "Read my creator profile, then find 10 businesses in my city that need a better website or online presence. Only add ones with a public phone number to my freelancing pipeline, with separate WhatsApp and email drafts."],
+  ["Log WhatsApp", "I just sent the WhatsApp message to Sharma Dental. Record it."],
   ["Update status", "Update Notion's status to Interested."],
   ["Log outreach", "I just sent the Instagram DM to Notion. Record it."],
   ["Log a reply", "Vercel replied to my email — they want rates for a reel. Record the reply."],
   ["Revenue", "Record ₹15,000 revenue from my brand collaboration with Notion, received today."],
-  ["Follow-ups", "Show all follow-ups due today."],
+  ["Follow-ups", "Show all follow-ups due today, brand deals and freelancing separately."],
   ["Prioritise", "What are my most promising brand deals right now, and what should I do next for each?"],
 ];
 

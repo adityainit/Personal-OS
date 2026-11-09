@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Bot,
+  BriefcaseBusiness,
   CalendarClock,
   CircleCheck,
   CircleX,
@@ -66,9 +67,11 @@ function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: 
 
 export default async function DashboardPage() {
   const { supabase } = await requireUser();
-  const [stats, funnel, overdue, today, activity, top] = await Promise.all([
+  const [stats, funnel, brandFunnel, freelanceFunnel, overdue, today, activity, top] = await Promise.all([
     dashboardStats(supabase),
     pipelineFunnel(supabase),
+    pipelineFunnel(supabase, undefined, undefined, "brand"),
+    pipelineFunnel(supabase, undefined, undefined, "freelance"),
     listFollowUps(supabase, { range: "overdue", limit: 10 }),
     listFollowUps(supabase, { range: "today", limit: 10 }),
     listActivities(supabase, { limit: 12 }),
@@ -91,10 +94,11 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Brands" value={num(stats.total_brands)} icon={<InstagramIcon />} href="/brands" />
+        <StatTile label="Freelance clients" value={num(stats.total_freelance ?? 0)} icon={<BriefcaseBusiness />} href="/freelance" />
         <StatTile label="New (7 days)" value={num(stats.new_leads_7d)} icon={<Sparkles />} tone="accent" />
         <StatTile label="Messages sent" value={num(stats.messages_sent)} icon={<Send />} />
         <StatTile label="Replies" value={num(stats.replies_received)} icon={<MessageCircle />} />
-        <StatTile label="Reply rate" value={pct(funnel.reply_rate)} hint="Brands that replied after you messaged" icon={<Percent />} />
+        <StatTile label="Reply rate" value={pct(funnel.reply_rate)} hint="Leads that replied after you messaged" icon={<Percent />} />
         <StatTile label="Interested" value={num(stats.interested)} icon={<Target />} tone="warning" />
         <StatTile
           label="Follow-ups due"
@@ -137,7 +141,12 @@ export default async function DashboardPage() {
             <ul className="divide-y divide-border">
               {due.map((f) => (
                 <li key={f.id} className="flex flex-col gap-1 px-4 py-3">
-                  <Link href={`/leads/${f.lead.id}?tab=outreach`} className="text-sm font-medium hover:text-accent">
+                  <Link href={`/leads/${f.lead.id}?tab=outreach`} className="inline-flex items-center gap-1.5 text-sm font-medium hover:text-accent">
+                    {f.lead.kind === "freelance" ? (
+                      <BriefcaseBusiness className="size-3.5 shrink-0 text-muted" />
+                    ) : (
+                      <InstagramIcon className="size-3.5 shrink-0 text-muted" />
+                    )}
                     {f.lead.name}
                   </Link>
                   <FollowUpRow f={f} />
@@ -181,7 +190,10 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
-        <MiniFunnel title="Brand pipeline" href="/brands" f={funnel} icon={<InstagramIcon className="size-4" />} />
+        <div className="flex flex-col gap-4">
+          <MiniFunnel title="Brand pipeline" href="/brands" f={brandFunnel} icon={<InstagramIcon className="size-4" />} />
+          <MiniFunnel title="Freelance pipeline" href="/freelance" f={freelanceFunnel} icon={<BriefcaseBusiness className="size-4" />} />
+        </div>
         <Card className="lg:col-span-2">
           <CardHeader
             title="Recent activity"

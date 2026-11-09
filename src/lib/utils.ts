@@ -107,6 +107,13 @@ export function instagramUrl(handle: string | null | undefined) {
   return `https://instagram.com/${handle.replace(/^@/, "")}`;
 }
 
+/** wa.me chat link for an E.164 number, optionally with a prefilled message (you still press send). */
+export function whatsappUrl(e164: string | null | undefined, text?: string) {
+  if (!e164) return null;
+  const digits = e164.replace(/\D/g, "");
+  return `https://wa.me/${digits}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+
 export function pct(n: number | null | undefined) {
   return `${Number(n ?? 0).toFixed(1).replace(/\.0$/, "")}%`;
 }

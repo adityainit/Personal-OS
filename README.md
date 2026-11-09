@@ -1,6 +1,9 @@
 # Personal OS
 
-A private CRM for Instagram brand deals: finding brands, outreach, follow-ups and revenue. Claude, through your Claude Pro account, connects to it over MCP to research brands and keep records up to date.
+A private CRM for Instagram brand deals and freelancing: finding brands and clients, outreach, follow-ups and revenue. Claude, through your Claude Pro account, connects to it over MCP to research leads and keep records up to date.
+
+- **Brand deals:** a brand needs its name and Instagram handle (or website). You reach them by Instagram DM or email.
+- **Freelancing:** a client needs a business name and phone number (Instagram optional). You reach them on WhatsApp or by email, never Instagram DM. Follow-up rules are separate from brand deals (default: first after 3 days, then 4 days later, max 2).
 
 **Claude never contacts anyone.** No tool can send a message. Claude researches, saves records and drafts outreach; you send every message yourself.
 
@@ -18,6 +21,7 @@ A private CRM for Instagram brand deals: finding brands, outreach, follow-ups an
    1. `supabase/migrations/20261105000001_schema.sql`
    2. `supabase/migrations/20261105000002_logic.sql`
    3. `supabase/migrations/20261105000003_security.sql`: a database-level sign-up guard and tighter permissions.
+   4. `supabase/migrations/20261109000004_freelancing.sql`: the freelancing pipeline (existing leads stay brand deals).
 4. **Authentication settings** (dashboard → Authentication):
 
 | Setting | Value |

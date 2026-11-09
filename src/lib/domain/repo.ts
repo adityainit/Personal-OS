@@ -26,6 +26,7 @@ import type {
   Funnel,
   Interaction,
   Lead,
+  LeadKind,
   LeadStatus,
   Outreach,
   Payment,
@@ -67,6 +68,7 @@ function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
 // Leads
 // ---------------------------------------------------------------------------
 export interface LeadFilters {
+  kind?: LeadKind;
   status?: LeadStatus | LeadStatus[];
   q?: string;
   minFit?: number;
@@ -78,6 +80,7 @@ export interface LeadFilters {
 
 export async function listLeads(db: Db, f: LeadFilters = {}) {
   let q = db.from("leads").select("*");
+  if (f.kind) q = q.eq("kind", f.kind);
   if (f.status) q = Array.isArray(f.status) ? q.in("status", f.status) : q.eq("status", f.status);
   if (f.minFit !== undefined) q = q.gte("fit_score", f.minFit);
   if (f.tag) q = q.contains("tags", [f.tag.toLowerCase()]);
@@ -86,7 +89,8 @@ export async function listLeads(db: Db, f: LeadFilters = {}) {
     const term = f.q.replace(/[%,()"'\\*]/g, " ").trim();
     if (term)
       q = q.or(
-        `name.ilike.%${term}%,domain_normalized.ilike.%${term}%,instagram_handle_normalized.ilike.%${term.replace(/^@/, "")}%,industry.ilike.%${term}%`,
+        `name.ilike.%${term}%,domain_normalized.ilike.%${term}%,instagram_handle_normalized.ilike.%${term.replace(/^@/, "")}%,industry.ilike.%${term}%` +
+          (/\d{4,}/.test(term) ? `,phone_e164.ilike.%${term.replace(/\D/g, "")}%` : ""),
       );
   }
   const sort = f.sort ?? "updated";
@@ -128,6 +132,7 @@ export async function getLeadBundle(db: Db, id: string) {
 
 export interface DuplicateMatch {
   id: string;
+  kind: LeadKind;
   name: string;
   status: LeadStatus;
   match_type: "website" | "instagram" | "phone" | "name";
@@ -141,6 +146,7 @@ export async function checkDuplicate(
     website?: string | null;
     instagram?: string | null;
     phone?: string | null;
+    kind?: LeadKind | null;
   },
 ) {
   return check(
@@ -149,16 +155,18 @@ export async function checkDuplicate(
       p_website: p.website ?? null,
       p_instagram: p.instagram ?? null,
       p_phone: p.phone ?? null,
+      p_kind: p.kind ?? null,
     }),
   ) as DuplicateMatch[];
 }
 
 /**
- * Creates a lead unless it already exists.
- * - Same website or Instagram handle: always the same business, so the existing lead is returned.
+ * Creates a lead unless it already exists in the same pipeline (brand deals or freelancing).
+ * - Same website or Instagram handle (or, for freelance clients, the same phone number): always the
+ *   same business, so the existing lead is returned.
  * - Same phone number or a very similar name: probably the same business, so it is returned too
  *   unless `allowSimilar` is set (the user confirmed it is a different business).
- * A phone number is optional; one that is given is validated here and by a database trigger.
+ * Phone numbers are validated here and by a database trigger; freelance clients must have one.
  */
 export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: boolean } = {}) {
   const data = parse(leadCreateSchema, input);
@@ -168,8 +176,14 @@ export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: 
     website: lead.website,
     instagram: lead.instagram_handle,
     phone: lead.phone_e164,
+    kind: lead.kind,
   });
-  const exact = dups.find((d) => d.match_type === "website" || d.match_type === "instagram");
+  const exact = dups.find(
+    (d) =>
+      d.match_type === "website" ||
+      d.match_type === "instagram" ||
+      (lead.kind === "freelance" && d.match_type === "phone"),
+  );
   if (exact) return { lead: await getLead(db, exact.id), duplicate: true as const, similar: dups };
   const probable = dups.find((d) => d.match_type === "phone" || (d.match_type === "name" && d.score >= 0.8));
   if (probable && !opts.allowSimilar) {
@@ -301,21 +315,22 @@ export async function updateFollowUp(
 }
 
 export type FollowUpWithLead = FollowUp & {
-  lead: Pick<Lead, "id" | "name" | "status" | "instagram_handle">;
+  lead: Pick<Lead, "id" | "kind" | "name" | "status" | "instagram_handle" | "phone_e164">;
 };
 
 export async function listFollowUps(
   db: Db,
-  opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number } = {},
+  opts: { range?: "overdue" | "today" | "upcoming" | "all"; kind?: LeadKind; limit?: number } = {},
 ) {
   // Day boundaries in the user's timezone (the server may run in UTC).
   const startOfToday = startOfDayInTz();
   const endOfToday = new Date(startOfDayInTz(ymd(new Date(startOfToday.getTime() + 36 * 3_600_000))).getTime() - 1);
   let q = db
     .from("follow_ups")
-    .select("*, lead:leads(id, name, status, instagram_handle)")
+    .select("*, lead:leads!inner(id, kind, name, status, instagram_handle, phone_e164)")
     .eq("status", "pending")
     .order("due_at");
+  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.range === "overdue") q = q.lt("due_at", startOfToday.toISOString());
   if (opts.range === "today")
     q = q.gte("due_at", startOfToday.toISOString()).lte("due_at", endOfToday.toISOString());
@@ -371,11 +386,12 @@ export async function dashboardStats(db: Db) {
   return check(await db.rpc("dashboard_stats")) as DashboardStats;
 }
 
-export async function pipelineFunnel(db: Db, from?: string, to?: string) {
+export async function pipelineFunnel(db: Db, from?: string, to?: string, kind?: LeadKind) {
   return check(
     await db.rpc("pipeline_funnel", {
       p_from: from ?? "-infinity",
       p_to: to ?? "infinity",
+      p_kind: kind ?? null,
     }),
   ) as Funnel;
 }
@@ -414,8 +430,9 @@ export async function listActivities(
 }
 
 /** Rank open leads: fit score, pipeline momentum, and freshness. */
-export async function topOpportunities(db: Db, limit = 10) {
+export async function topOpportunities(db: Db, limit = 10, kind?: LeadKind) {
   const leads = await listLeads(db, {
+    kind,
     status: ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"],
     limit: 500,
   });

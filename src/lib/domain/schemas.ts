@@ -69,6 +69,7 @@ const optDate = z
   .transform((v) => (v ? v : null))
   .refine((v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), "Use YYYY-MM-DD");
 
+export const leadKind = z.enum(["brand", "freelance"]);
 export const leadStatus = z.enum(LEAD_STATUSES as [string, ...string[]]);
 export const channel = z.enum(CHANNELS as [string, ...string[]]);
 
@@ -100,24 +101,34 @@ const phoneFields = {
 export const leadFields = { ...leadDetailFields, ...phoneFields };
 
 export const NEEDS_BRAND_PROFILE = "Add the brand's Instagram handle or website";
+export const NEEDS_FREELANCE_PHONE = "Freelance clients need a phone number (you reach them on WhatsApp)";
 
 /**
- * New brand leads: name and the brand's Instagram handle or website. No phone number is
- * needed (brand deals happen over DM / email); one that is given is still validated.
+ * New leads.
+ *  - Instagram brand deal (default): name and the brand's Instagram handle or website. No phone
+ *    number is needed (brand deals happen over DM / email); one that is given is still validated.
+ *  - Freelance client: business name and a valid phone number with country code (WhatsApp).
+ *    Instagram handle, website and email are optional.
  */
 export const leadCreateSchema = z
   .object({
+    kind: leadKind.default("brand"),
     ...leadFields,
     status: leadStatus.optional(),
     source: z.enum(["claude", "manual"]).optional(),
   })
   .transform((d, ctx) => {
     const { phone_number, phone_country, ...rest } = d;
-    if (!d.instagram_handle && !d.website) {
-      ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
+    if (d.kind === "brand") {
+      if (!d.instagram_handle && !d.website) {
+        ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
+        return z.NEVER;
+      }
+      if (!phone_number) return { ...rest, phone_e164: null as string | null, phone_country: null as string | null };
+    } else if (!phone_number) {
+      ctx.addIssue({ code: "custom", path: ["phone_number"], message: NEEDS_FREELANCE_PHONE });
       return z.NEVER;
     }
-    if (!phone_number) return { ...rest, phone_e164: null, phone_country: null };
     const phone = validatePhone(phone_number, phone_country);
     if (!phone.ok) {
       ctx.addIssue({ code: "custom", path: ["phone_number"], message: phone.error });
@@ -215,6 +226,7 @@ export const creatorProfileSchema = z.object({
   content_style: optText(2000),
   past_collaborations: optText(5000),
   rates: optText(2000),
+  freelance_services: optText(5000),
   portfolio_url: optUrl,
   bio: optText(5000),
 });
@@ -224,6 +236,13 @@ export const followUpRulesSchema = z.object({
   default_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
   follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
   max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
+});
+
+/** Follow-up timing for freelance outreach (WhatsApp / email). */
+export const freelanceFollowUpRulesSchema = z.object({
+  freelance_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
+  freelance_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
+  freelance_max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
 });
 
 /** Strip null values so creator profile JSON stays tidy. */

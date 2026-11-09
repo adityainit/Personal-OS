@@ -7,9 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/form";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
-import { LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
+import { KIND_PATH, LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
 import { listLeads, type LeadFilters } from "@/lib/domain/repo";
-import type { LeadStatus } from "@/lib/domain/types";
+import type { LeadKind, LeadStatus } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { LeadFields } from "./lead-form";
@@ -19,19 +19,34 @@ import { LeadsTable } from "./leads-table";
 type SP = Record<string, string | string[] | undefined>;
 const str = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
-const copy = {
-  title: "Instagram Brand Deals",
-  description: "Brands that could sponsor or collaborate with your content.",
-  empty: "No brands yet",
-  emptyHint: 'Ask Claude: "Find 10 brands that fit my Instagram profile and add them to my CRM."',
-  add: "Add brand",
+const COPY = {
+  brand: {
+    title: "Instagram Brand Deals",
+    description: "Brands that could sponsor or collaborate with your content.",
+    empty: "No brands yet",
+    emptyHint: 'Ask Claude: "Find 10 brands that fit my Instagram profile and add them to my CRM."',
+    add: "Add brand",
+    dupes: "Duplicates are detected by Instagram handle and website.",
+    filter: "Filter by name, @handle, domain",
+  },
+  freelance: {
+    title: "Freelancing",
+    description: "Businesses you could do freelance work for. You reach them on WhatsApp or by email.",
+    empty: "No freelance clients yet",
+    emptyHint: 'Ask Claude: "Find 10 local businesses that need a better website and add them to my freelancing pipeline."',
+    add: "Add client",
+    dupes: "Duplicates are detected by phone number, Instagram handle and website.",
+    filter: "Filter by name, @handle, domain, phone",
+  },
 } as const;
 
-export async function LeadsPage({ searchParams }: { searchParams: SP }) {
+export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams: SP; kind?: LeadKind }) {
+  const copy = COPY[kind];
   const { supabase } = await requireUser();
   const view = str(searchParams.view) === "board" ? "board" : "table";
   const status = str(searchParams.status);
   const filters: LeadFilters = {
+    kind,
     q: str(searchParams.q),
     status: status === "open"
       ? ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"]
@@ -41,7 +56,7 @@ export async function LeadsPage({ searchParams }: { searchParams: SP }) {
     sort: (["updated", "created", "fit", "name"] as const).find((s) => s === str(searchParams.sort)) ?? "updated",
   };
   const leads = await listLeads(supabase, filters);
-  const base = "/brands";
+  const base = KIND_PATH[kind];
   const qs = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...searchParams, ...patch })) if (typeof v === "string" && v) p.set(k, v);
@@ -57,17 +72,17 @@ export async function LeadsPage({ searchParams }: { searchParams: SP }) {
         description={`${copy.description} ${leads.length} shown.`}
         actions={
           <>
-            <a href="/api/export?type=leads" className={buttonClass("secondary", "md")}>
+            <a href={`/api/export?type=leads&kind=${kind}`} className={buttonClass("secondary", "md")}>
               <Download /> CSV
             </a>
             <Dialog
               trigger={<><Plus /> {copy.add}</>}
               title={copy.add}
               wide
-              description="Duplicates are detected by Instagram handle and website."
+              description={copy.dupes}
             >
               <ActionForm action={createLeadAction}>
-                <LeadFields />
+                <LeadFields kind={kind} />
               </ActionForm>
             </Dialog>
           </>
@@ -79,7 +94,7 @@ export async function LeadsPage({ searchParams }: { searchParams: SP }) {
           <input type="hidden" name="view" value={view} />
           <div className="relative min-w-48 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <Input name="q" defaultValue={filters.q} placeholder="Filter by name, @handle, domain" className="pl-8" />
+            <Input name="q" defaultValue={filters.q} placeholder={copy.filter} className="pl-8" />
           </div>
           <Select name="status" defaultValue={status ?? ""} className="w-auto" aria-label="Status">
             <option value="">All statuses</option>
@@ -146,7 +161,7 @@ export async function LeadsPage({ searchParams }: { searchParams: SP }) {
         ) : view === "board" ? (
           <LeadsBoard leads={leads} />
         ) : (
-          <LeadsTable leads={leads} />
+          <LeadsTable leads={leads} kind={kind} />
         )}
       </Card>
     </>

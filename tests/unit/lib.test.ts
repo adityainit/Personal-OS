@@ -78,7 +78,16 @@ describe("brand lead rules (forms and MCP share these)", () => {
     const r = leadCreateSchema.parse({ ...OK_BRAND, fit_score: "80", tags: "AI, DevTools ," });
     expect(r).toMatchObject({ name: "Glow Labs", phone_e164: null, phone_country: null, fit_score: 80, tags: ["ai", "devtools"], email: null, contact_person: null });
     expect(r).not.toHaveProperty("phone_number");
-    expect(r).not.toHaveProperty("kind");
+    expect(r.kind).toBe("brand");
+  });
+  it("freelance clients need a valid phone number; Instagram and email stay optional", () => {
+    const base = { kind: "freelance", name: "Sharma Dental" };
+    const missing = leadCreateSchema.safeParse(base);
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(missing.error.issues[0].path).toEqual(["phone_number"]);
+    expect(leadCreateSchema.safeParse({ ...base, phone_number: "123", phone_country: "IN" }).success).toBe(false);
+    const ok = leadCreateSchema.parse({ ...base, phone_number: "98765 43210", phone_country: "IN" });
+    expect(ok).toMatchObject({ kind: "freelance", phone_e164: "+919876543210", phone_country: "IN", instagram_handle: null, email: null });
   });
   it("needs an Instagram handle or website", () => {
     expect(leadCreateSchema.safeParse({ ...OK_BRAND, instagram_handle: "", website: "glowlabs.com" }).success).toBe(true);

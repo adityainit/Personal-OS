@@ -1,3 +1,4 @@
+export type LeadKind = "brand" | "freelance";
 export type LeadStatus =
   | "new"
   | "researched"
@@ -10,7 +11,7 @@ export type LeadStatus =
   | "lost"
   | "do_not_contact";
 export type LeadSource = "claude" | "manual";
-export type OutreachChannel = "instagram_dm" | "email" | "linkedin" | "other";
+export type OutreachChannel = "instagram_dm" | "whatsapp" | "email" | "linkedin" | "other";
 export type OutreachStatus = "draft" | "sent";
 export type InteractionType = "reply" | "note" | "call" | "meeting" | "negotiation" | "decline";
 export type FollowUpStatus = "pending" | "done" | "cancelled";
@@ -19,6 +20,7 @@ export type Actor = "me" | "claude" | "system";
 
 export interface Lead {
   id: string;
+  kind: LeadKind;
   name: string;
   website: string | null;
   domain_normalized: string | null;
@@ -137,6 +139,7 @@ export interface CreatorProfile {
   content_style?: string;
   past_collaborations?: string;
   rates?: string;
+  freelance_services?: string;
   portfolio_url?: string;
   bio?: string;
 }
@@ -147,6 +150,9 @@ export interface Settings {
   default_follow_up_days: number;
   follow_up_gap_days: number;
   max_follow_ups: number;
+  freelance_first_follow_up_days: number;
+  freelance_follow_up_gap_days: number;
+  freelance_max_follow_ups: number;
   currency: string;
 }
 
@@ -156,8 +162,15 @@ export interface FollowUpRules {
   max: number;
 }
 
-/** The follow-up rules saved in Settings. */
-export function followUpRules(s: Partial<Settings> | null | undefined): FollowUpRules {
+/** The follow-up rules saved in Settings for one pipeline (brand deals by default). */
+export function followUpRules(s: Partial<Settings> | null | undefined, kind: LeadKind = "brand"): FollowUpRules {
+  if (kind === "freelance") {
+    return {
+      first: s?.freelance_first_follow_up_days ?? 3,
+      gap: s?.freelance_follow_up_gap_days ?? 4,
+      max: s?.freelance_max_follow_ups ?? 2,
+    };
+  }
   return {
     first: s?.default_follow_up_days ?? 3,
     gap: s?.follow_up_gap_days ?? 4,
@@ -174,6 +187,7 @@ export function describeRules(r: FollowUpRules) {
 
 export interface DashboardStats {
   total_brands: number;
+  total_freelance: number;
   new_leads_7d: number;
   messages_sent: number;
   replies_received: number;

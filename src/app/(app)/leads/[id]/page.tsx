@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, ExternalLink, MessageSquarePlus, Pencil, Phone, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BriefcaseBusiness, Bot, ExternalLink, MessageCircle, MessageSquarePlus, Pencil, Phone, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createDealAction, deleteLeadAction, updateLeadAction } from "@/actions";
@@ -14,10 +14,11 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { ActionButton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/page-header";
+import { KIND_PATH } from "@/lib/domain/constants";
 import { formatPhone } from "@/lib/domain/phone";
 import { getLeadBundle, getSettings, RepoError } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
-import { cn, externalUrl, instagramUrl } from "@/lib/utils";
+import { cn, externalUrl, instagramUrl, whatsappUrl } from "@/lib/utils";
 import { Contacts, Conversation, FollowUps, InteractionForm, OutreachSection, Overview } from "./sections";
 
 const TABS = [
@@ -63,14 +64,19 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
 
   return (
     <>
-      <Link href="/brands" className="mb-4 inline-flex items-center gap-1 text-xs text-muted hover:text-fg">
-        <ArrowLeft className="size-3.5" /> Brand Deals
+      <Link href={KIND_PATH[lead.kind]} className="mb-4 inline-flex items-center gap-1 text-xs text-muted hover:text-fg">
+        <ArrowLeft className="size-3.5" /> {lead.kind === "freelance" ? "Freelancing" : "Brand Deals"}
       </Link>
 
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{lead.name}</h1>
+            {lead.kind === "freelance" ? (
+              <Badge>
+                <BriefcaseBusiness className="size-3" /> Freelance
+              </Badge>
+            ) : null}
             {lead.source === "claude" ? (
               <Badge className="border-accent/30 text-accent">
                 <Bot className="size-3" /> Found by Claude
@@ -91,6 +97,11 @@ export default async function LeadPage({ params, searchParams }: PageProps<"/lea
             {lead.phone_e164 ? (
               <a href={`tel:${lead.phone_e164}`} className="inline-flex items-center gap-1 hover:text-accent">
                 <Phone className="size-3" /> {formatPhone(lead.phone_e164)}
+              </a>
+            ) : null}
+            {lead.kind === "freelance" && lead.phone_e164 ? (
+              <a href={whatsappUrl(lead.phone_e164)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-accent">
+                <MessageCircle className="size-3" /> WhatsApp
               </a>
             ) : null}
             {lead.industry ? <span>{lead.industry}</span> : null}

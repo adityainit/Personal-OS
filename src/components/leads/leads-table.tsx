@@ -15,8 +15,9 @@ import { toast } from "sonner";
 import { setLeadStatusAction } from "@/actions";
 import { FitScore, StatusBadge } from "@/components/ui/badge";
 import { LEAD_STATUSES, STATUS_LABEL, STATUS_TONE } from "@/lib/domain/constants";
-import type { Lead, LeadStatus } from "@/lib/domain/types";
-import { cn, instagramUrl, relative } from "@/lib/utils";
+import { formatPhone } from "@/lib/domain/phone";
+import type { Lead, LeadKind, LeadStatus } from "@/lib/domain/types";
+import { cn, instagramUrl, relative, whatsappUrl } from "@/lib/utils";
 
 const col = createColumnHelper<Lead>();
 
@@ -66,7 +67,25 @@ const instagramColumn = col.accessor("instagram_handle_normalized", {
   sortUndefined: "last",
 });
 
-const columns = [
+const phoneColumn = col.accessor("phone_e164", {
+  header: "WhatsApp",
+  cell: (c) =>
+    c.getValue() ? (
+      <a
+        href={whatsappUrl(c.getValue()) ?? "#"}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="whitespace-nowrap text-xs hover:text-accent hover:underline"
+      >
+        {formatPhone(c.getValue())}
+      </a>
+    ) : (
+      <span className="text-xs text-muted">—</span>
+    ),
+  sortUndefined: "last",
+});
+
+const brandColumns = [
   col.accessor("name", {
     header: "Name",
     cell: (c) => (
@@ -120,8 +139,12 @@ const columns = [
   }),
 ];
 
-export function LeadsTable({ leads }: { leads: Lead[] }) {
+// Freelance: phone (WhatsApp) right after the name, then Instagram.
+const freelanceColumns = [brandColumns[0], phoneColumn, ...brandColumns.slice(1)];
+
+export function LeadsTable({ leads, kind = "brand" }: { leads: Lead[]; kind?: LeadKind }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const columns = kind === "freelance" ? freelanceColumns : brandColumns;
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: leads,
@@ -186,6 +209,7 @@ export function LeadsTable({ leads }: { leads: Lead[] }) {
                 <StatusBadge status={l.status} />
               </div>
               <p className="line-clamp-1 text-xs text-muted">{l.suggested_service ?? l.industry ?? l.domain_normalized ?? "—"}</p>
+              {kind === "freelance" && l.phone_e164 ? <p className="text-xs text-muted">{formatPhone(l.phone_e164)}</p> : null}
               {l.instagram_handle_normalized ? (
                 <p className="text-xs text-muted">@{l.instagram_handle_normalized}</p>
               ) : null}
