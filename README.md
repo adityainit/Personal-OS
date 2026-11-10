@@ -5,6 +5,8 @@ A private CRM for Instagram brand deals and freelancing: finding brands and clie
 - **Brand deals:** a brand needs its name and Instagram handle (or website). You reach them by Instagram DM or email.
 - **Freelancing:** a client needs a business name and phone number (Instagram optional). You reach them on WhatsApp or by email, never Instagram DM. Follow-up rules are separate from brand deals (default: first after 3 days, then 4 days later, max 2).
 
+Both lists are grouped by the date each lead was added (newest first), show how many messages you've sent each lead and when, and have a "messages sent per day" strip: click a day to see who you messaged. The dashboard, reports, activity log and notifications all show which pipeline each item belongs to.
+
 **Claude never contacts anyone.** No tool can send a message. Claude researches, saves records and drafts outreach; you send every message yourself.
 
 - **Stack:** Next.js 16 (App Router) · Tailwind v4 · Supabase (Postgres, Auth, RLS, pg_cron) · remote MCP server at `/api/mcp`

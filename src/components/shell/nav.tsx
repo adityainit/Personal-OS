@@ -12,7 +12,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LogoMark } from "@/components/brand/logo";
@@ -30,26 +30,49 @@ const NAV = [
   { href: "/assistant", label: "Claude Assistant", icon: Bot },
 ];
 
+/** Small fixed-size spinner shown only while a click is still loading (no layout shift). */
+function PendingHint() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "size-3 shrink-0 rounded-full border-2 border-current border-t-transparent transition-opacity",
+        pending ? "animate-spin opacity-60 delay-100" : "opacity-0",
+      )}
+    />
+  );
+}
+
 function NavLinks({ dueCount, onNavigate }: { dueCount: number; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const isActive = (href: string) =>
+  // Highlight the tab you clicked straight away instead of waiting for the new page.
+  // The override only applies while we're still on the page the click came from.
+  const [clicked, setClicked] = useState<{ href: string; from: string } | null>(null);
+  const optimistic = clicked && clicked.from === pathname ? clicked.href : null;
+  const matches = (href: string) =>
     pathname === href ||
     pathname.startsWith(href + "/") ||
     (href === "/brands" && pathname.startsWith("/leads/"));
+  const isActive = (href: string) => (optimistic ? optimistic === href : matches(href));
   return (
     <nav className="flex flex-col gap-0.5">
       {NAV.map(({ href, label, icon: Icon, badge }) => (
         <Link
           key={href}
           href={href}
-          onClick={onNavigate}
+          onClick={() => {
+            setClicked({ href, from: pathname });
+            onNavigate?.();
+          }}
           className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-75",
             isActive(href) ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-fg",
           )}
         >
           <Icon className="size-4 shrink-0" />
           <span className="flex-1">{label}</span>
+          <PendingHint />
           {badge === "followUps" && dueCount > 0 ? (
             <span className="rounded-full bg-danger px-1.5 text-[10px] font-semibold leading-4 text-danger-fg">{dueCount}</span>
           ) : null}

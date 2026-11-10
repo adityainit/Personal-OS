@@ -5,6 +5,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Make sure a profile photo dropped into /public is available to the server render.
   outputFileTracingIncludes: { "/**": ["./public/profile.*"] },
+  experimental: {
+    // Keep visited pages in the browser's router cache for 30s so switching back to a
+    // tab is instant. Every server action calls revalidatePath, which clears this cache,
+    // so your own edits always show straight away.
+    staleTimes: { dynamic: 30, static: 300 },
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -1,5 +1,6 @@
 import {
   Bot,
+  BriefcaseBusiness,
   CalendarCheck,
   CalendarClock,
   CalendarX,
@@ -16,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { InstagramIcon } from "@/components/icons";
 import { ACTIVITY_LABEL } from "@/lib/domain/constants";
 import type { Activity, Lead } from "@/lib/domain/types";
 import { cn, fmtDateTime, relative, prettySummary } from "@/lib/utils";
@@ -42,7 +44,7 @@ const ICONS: Record<string, [LucideIcon, string]> = {
   payment_received: [IndianRupee, "text-success bg-success/10"],
 };
 
-export type ActivityRow = Activity & { lead?: Pick<Lead, "id" | "name"> | null };
+export type ActivityRow = Activity & { lead?: (Pick<Lead, "id" | "name"> & { kind?: Lead["kind"] }) | null };
 
 export function Timeline({ items, showLead = false }: { items: ActivityRow[]; showLead?: boolean }) {
   if (items.length === 0) return <p className="px-4 py-8 text-center text-xs text-muted">No activity yet.</p>;
@@ -72,7 +74,17 @@ export function Timeline({ items, showLead = false }: { items: ActivityRow[]; sh
                 ) : a.actor === "system" ? (
                   <span>· automatic</span>
                 ) : null}
-                {showLead && a.lead ? <span className="font-medium text-fg/80">· {a.lead.name}</span> : null}
+                {showLead && a.lead ? (
+                  <span className="inline-flex items-center gap-1 font-medium text-fg/80">
+                    ·
+                    {a.lead.kind === "freelance" ? (
+                      <BriefcaseBusiness className="size-3" />
+                    ) : a.lead.kind === "brand" ? (
+                      <InstagramIcon className="size-3" />
+                    ) : null}
+                    {a.lead.name}
+                  </span>
+                ) : null}
               </p>
             </div>
           </div>

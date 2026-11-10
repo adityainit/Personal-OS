@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const [{ data: notes }, { count: dueCount }] = await Promise.all([
     supabase
       .from("notifications")
-      .select("id, read_at, created_at, activity:activities(type, summary, lead_id, actor)")
+      .select("id, read_at, created_at, activity:activities(type, summary, lead_id, actor, lead:leads(kind))")
       .order("created_at", { ascending: false })
       .limit(20),
     supabase

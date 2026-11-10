@@ -16,12 +16,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { Timeline } from "@/components/activity/timeline";
+import { SentPerDayChart } from "@/components/charts/sent-per-day";
 import { InstagramIcon } from "@/components/icons";
 import { FitScore, StatusBadge } from "@/components/ui/badge";
 import { Card, CardHeader, StatTile } from "@/components/ui/card";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
 import { FollowUpRow } from "../leads/[id]/sections";
-import { dashboardStats, listActivities, listFollowUps, pipelineFunnel, topOpportunities } from "@/lib/domain/repo";
+import { lastNDays, messagesByDay } from "@/lib/domain/messages";
+import { dashboardStats, listActivities, listFollowUps, listSentMessages, pipelineFunnel, topOpportunities } from "@/lib/domain/repo";
 import type { Funnel } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 import { money, num, pct } from "@/lib/utils";
@@ -67,7 +69,7 @@ function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: 
 
 export default async function DashboardPage() {
   const { supabase } = await requireUser();
-  const [stats, funnel, brandFunnel, freelanceFunnel, overdue, today, activity, top] = await Promise.all([
+  const [stats, funnel, brandFunnel, freelanceFunnel, overdue, today, activity, top, sent] = await Promise.all([
     dashboardStats(supabase),
     pipelineFunnel(supabase),
     pipelineFunnel(supabase, undefined, undefined, "brand"),
@@ -76,7 +78,11 @@ export default async function DashboardPage() {
     listFollowUps(supabase, { range: "today", limit: 10 }),
     listActivities(supabase, { limit: 12 }),
     topOpportunities(supabase, 5),
+    listSentMessages(supabase),
   ]);
+  const sentDays = lastNDays(messagesByDay(sent), 14);
+  const sentBrand = sent.filter((m) => m.kind === "brand").length;
+  const sentToday = sentDays[0];
   const due = [...overdue, ...today];
   const hour = new Date().toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" });
   const greeting = Number(hour) < 12 ? "Good morning" : Number(hour) < 17 ? "Good afternoon" : "Good evening";
@@ -96,7 +102,12 @@ export default async function DashboardPage() {
         <StatTile label="Brands" value={num(stats.total_brands)} icon={<InstagramIcon />} href="/brands" />
         <StatTile label="Freelance clients" value={num(stats.total_freelance ?? 0)} icon={<BriefcaseBusiness />} href="/freelance" />
         <StatTile label="New (7 days)" value={num(stats.new_leads_7d)} icon={<Sparkles />} tone="accent" />
-        <StatTile label="Messages sent" value={num(stats.messages_sent)} icon={<Send />} />
+        <StatTile
+          label="Messages sent"
+          value={num(sent.length)}
+          hint={`${num(sentBrand)} brand · ${num(sent.length - sentBrand)} freelance · ${num(sentToday.total)} today`}
+          icon={<Send />}
+        />
         <StatTile label="Replies" value={num(stats.replies_received)} icon={<MessageCircle />} />
         <StatTile label="Reply rate" value={pct(funnel.reply_rate)} hint="Leads that replied after you messaged" icon={<Percent />} />
         <StatTile label="Interested" value={num(stats.interested)} icon={<Target />} tone="warning" />
@@ -174,7 +185,14 @@ export default async function DashboardPage() {
                 <li key={l.id}>
                   <Link href={`/leads/${l.id}`} className="flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-surface-2/60">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{l.name}</p>
+                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {l.kind === "freelance" ? (
+                          <BriefcaseBusiness className="size-3.5 shrink-0 text-muted" />
+                        ) : (
+                          <InstagramIcon className="size-3.5 shrink-0 text-muted" />
+                        )}
+                        <span className="truncate">{l.name}</span>
+                      </p>
                       <p className="truncate text-[11px] text-muted">{l.suggested_service ?? l.industry ?? "—"}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
@@ -188,6 +206,26 @@ export default async function DashboardPage() {
           )}
         </Card>
       </div>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Messages sent per day"
+          description={`Last 14 days · ${num(sentToday.total)} today (${num(sentToday.brand)} brand, ${num(sentToday.freelance)} freelance)`}
+          action={
+            <span className="flex gap-3 text-xs">
+              <Link href="/brands" className="text-accent hover:underline">
+                Brands by date
+              </Link>
+              <Link href="/freelance" className="text-accent hover:underline">
+                Clients by date
+              </Link>
+            </span>
+          }
+        />
+        <div className="p-4">
+          <SentPerDayChart days={sentDays} />
+        </div>
+      </Card>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4">

@@ -33,6 +33,7 @@ import type {
   RevenueSummary,
   Settings,
 } from "./types";
+import type { SentMessage } from "./messages";
 
 export type Db = SupabaseClient;
 
@@ -269,6 +270,33 @@ export async function markSent(
 // ---------------------------------------------------------------------------
 // Interactions
 // ---------------------------------------------------------------------------
+/**
+ * Setting a lead to "contacted" means you sent it a message. If no message is marked
+ * as sent yet, mark the first unsent draft as sent (or record a placeholder message when
+ * there is no draft), so it counts in "messages sent" and its follow-ups get scheduled.
+ */
+export async function markContacted(db: Db, leadId: string, opts: { sentAt?: string } = {}) {
+  const lead = await getLead(db, leadId);
+  const { data: rows, error } = await db
+    .from("outreach")
+    .select("id, channel, status, created_at")
+    .eq("lead_id", leadId)
+    .order("created_at", { ascending: true });
+  if (error) throw new RepoError(error.message);
+  const outreach = (rows ?? []) as Pick<Outreach, "id" | "channel" | "status" | "created_at">[];
+  if (outreach.some((o) => o.status === "sent")) {
+    return { lead: await updateLead(db, leadId, { status: "contacted" }), marked: null };
+  }
+  const preferred = lead.kind === "freelance" ? "whatsapp" : "instagram_dm";
+  const drafts = outreach.filter((o) => o.status === "draft");
+  const draft =
+    drafts.find((o) => o.channel === preferred) ??
+    drafts[0] ??
+    (await saveDraft(db, leadId, { channel: preferred, body: "(Message sent outside Personal OS)" }));
+  const marked = await markSent(db, draft.id, { sentAt: opts.sentAt ?? null, force: true });
+  return { lead: await getLead(db, leadId), marked };
+}
+
 export async function recordInteraction(db: Db, leadId: string, input: unknown) {
   const data = parse(interactionSchema, input);
   const row = { ...data, lead_id: leadId, occurred_at: data.occurred_at ?? new Date().toISOString() };
@@ -414,22 +442,48 @@ export async function searchAll(db: Db, query: string, limit = 20) {
 
 export async function listActivities(
   db: Db,
-  opts: { leadId?: string; type?: string; actor?: string; limit?: number; before?: string } = {},
+  opts: { leadId?: string; type?: string; actor?: string; kind?: LeadKind; limit?: number; before?: string } = {},
 ) {
   let q = db
     .from("activities")
-    .select("*, lead:leads(id, name)")
+    .select(opts.kind ? "*, lead:leads!inner(id, name, kind)" : "*, lead:leads(id, name, kind)")
     .order("created_at", { ascending: false });
   if (opts.leadId) q = q.eq("lead_id", opts.leadId);
+  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.type) q = q.like("type", `${opts.type}%`);
   if (opts.actor) q = q.eq("actor", opts.actor);
   if (opts.before) q = q.lt("created_at", opts.before);
   return check(await q.limit(opts.limit ?? 100)) as unknown as (Activity & {
-    lead: Pick<Lead, "id" | "name"> | null;
+    lead: Pick<Lead, "id" | "name" | "kind"> | null;
   })[];
 }
 
 /** Rank open leads: fit score, pipeline momentum, and freshness. */
+/**
+ * Messages you marked as sent (oldest first), optionally for one pipeline and/or a
+ * time window. Used for "messages sent per day" and each lead's contact dates.
+ */
+export async function listSentMessages(
+  db: Db,
+  opts: { kind?: LeadKind; from?: string; to?: string; limit?: number } = {},
+): Promise<SentMessage[]> {
+  let q = db
+    .from("outreach")
+    .select("lead_id, sent_at, channel, lead:leads!inner(kind)")
+    .eq("status", "sent")
+    .order("sent_at", { ascending: false });
+  if (opts.kind) q = q.eq("lead.kind", opts.kind);
+  if (opts.from) q = q.gte("sent_at", opts.from);
+  if (opts.to) q = q.lt("sent_at", opts.to);
+  const rows = check(await q.limit(opts.limit ?? 5000)) as unknown as {
+    lead_id: string;
+    sent_at: string;
+    channel: SentMessage["channel"];
+    lead: { kind: LeadKind };
+  }[];
+  return rows.map((r) => ({ lead_id: r.lead_id, sent_at: r.sent_at, channel: r.channel, kind: r.lead.kind }));
+}
+
 export async function topOpportunities(db: Db, limit = 10, kind?: LeadKind) {
   const leads = await listLeads(db, {
     kind,

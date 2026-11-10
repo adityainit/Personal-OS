@@ -24,18 +24,21 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // Do not run code between createServerClient and getUser (session refresh).
-  const { data } = await supabase.auth.getUser();
+  // Do not run code between createServerClient and getClaims (session refresh).
+  // getClaims verifies the JWT locally with the cached signing keys, so a page
+  // load doesn't wait on a round trip to the Auth server.
+  const { data } = await supabase.auth.getClaims();
+  const signedIn = Boolean(data?.claims?.sub);
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p));
 
-  if (!data.user && !isPublic) {
+  if (!signedIn && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
     if (pathname !== "/") url.searchParams.set("next", pathname + search);
     return NextResponse.redirect(url);
   }
-  if (data.user && pathname === "/login") {
+  if (signedIn && pathname === "/login") {
     return NextResponse.redirect(new URL(safeNext(request.nextUrl.searchParams.get("next")), request.url));
   }
   return response;

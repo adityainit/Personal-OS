@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Bot, CalendarClock } from "lucide-react";
+import { Bell, Bot, BriefcaseBusiness, CalendarClock } from "lucide-react";
+import { InstagramIcon } from "@/components/icons";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { markNotificationsReadAction } from "@/actions";
@@ -10,7 +11,7 @@ export interface NotificationItem {
   id: string;
   read_at: string | null;
   created_at: string;
-  activity: { type: string; summary: string; lead_id: string | null; actor: string } | null;
+  activity: { type: string; summary: string; lead_id: string | null; actor: string; lead?: { kind: "brand" | "freelance" } | null } | null;
 }
 
 export function NotificationBell({ items }: { items: NotificationItem[] }) {
@@ -78,7 +79,12 @@ export function NotificationBell({ items }: { items: NotificationItem[] }) {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className={cn("text-sm", !n.read_at && "font-medium")}>{a?.summary ? prettySummary(a.summary) : "Update"}</p>
-                      <p className="mt-0.5 text-[11px] text-muted" suppressHydrationWarning>
+                      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted" suppressHydrationWarning>
+                        {a?.lead?.kind === "freelance" ? (
+                          <><BriefcaseBusiness className="size-3" /> Freelancing ·</>
+                        ) : a?.lead?.kind === "brand" ? (
+                          <><InstagramIcon className="size-3" /> Brand deal ·</>
+                        ) : null}
                         {a?.actor === "claude" ? "Claude · " : ""}
                         {relative(n.created_at)}
                       </p>

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { toCsv } from "@/lib/csv";
-import { pipelineFunnel, revenueSummary } from "@/lib/domain/repo";
+import { messagesByDay } from "@/lib/domain/messages";
+import { listSentMessages, pipelineFunnel, revenueSummary } from "@/lib/domain/repo";
 import { isAllowedEmail } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { ymd } from "@/lib/utils";
@@ -95,12 +96,19 @@ export async function GET(req: NextRequest) {
       case "report": {
         const from = sp.get("from") ?? undefined;
         const to = sp.get("to") ?? undefined;
-        const [b, r] = await Promise.all([
-          pipelineFunnel(supabase, from, to),
+        const [b, f, r, sent] = await Promise.all([
+          pipelineFunnel(supabase, from, to, "brand"),
+          pipelineFunnel(supabase, from, to, "freelance"),
           revenueSummary(supabase, sp.get("dfrom") ?? undefined, sp.get("dto") ?? undefined),
+          listSentMessages(supabase, { from, to }),
         ]);
         const rows = [
           ...Object.entries(b).map(([k, v]) => ({ section: "brand_deals", metric: k, value: v })),
+          ...Object.entries(f).map(([k, v]) => ({ section: "freelancing", metric: k, value: v })),
+          ...messagesByDay(sent).flatMap((d) => [
+            { section: "messages_sent_brand", metric: d.day, value: d.brand },
+            { section: "messages_sent_freelance", metric: d.day, value: d.freelance },
+          ]),
           ...Object.entries(r)
             .filter(([, v]) => typeof v !== "object")
             .map(([k, v]) => ({ section: "revenue", metric: k, value: v })),

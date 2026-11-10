@@ -63,6 +63,14 @@ export async function updateLeadAction(id: string, _: ActionResult | null, fd: F
 export async function setLeadStatusAction(id: string, status: LeadStatus): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser();
+    const lead = await repo.getLead(supabase, id);
+    // "Contacted" from an earlier stage means you just messaged them: record the message
+    // so it counts per day and the follow-ups are scheduled.
+    if (status === "contacted" && ["new", "researched", "drafted"].includes(lead.status)) {
+      const r = await repo.markContacted(supabase, id);
+      refresh();
+      return ok(r.marked?.follow_up ? "Marked as messaged · follow-up scheduled" : "Marked as messaged");
+    }
     await repo.updateLead(supabase, id, { status });
     refresh();
     return ok("Status updated");

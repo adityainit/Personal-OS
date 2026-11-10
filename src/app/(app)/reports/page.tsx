@@ -1,15 +1,17 @@
-import { ArrowDownRight, ArrowUpRight, Download, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, BriefcaseBusiness, Download, Minus, Send } from "lucide-react";
+import Link from "next/link";
 import { HBarChart, MonthlyRevenueChart } from "@/components/charts/charts";
 import { RangeFilter } from "@/components/charts/range-filter";
 import { InstagramIcon } from "@/components/icons";
 import { buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { pipelineFunnel, revenueSummary } from "@/lib/domain/repo";
-import type { Funnel } from "@/lib/domain/types";
+import { messagesByDay, type DayTotal } from "@/lib/domain/messages";
+import { listSentMessages, pipelineFunnel, revenueSummary } from "@/lib/domain/repo";
+import type { Funnel, LeadKind } from "@/lib/domain/types";
 import { previousRange, rangeInstants, resolveRange } from "@/lib/ranges";
 import { requireUser } from "@/lib/supabase/server";
-import { cn, money, num, pct } from "@/lib/utils";
+import { cn, fmtDate, money, num, pct } from "@/lib/utils";
 
 type Row = { label: string; cur: number; prev: number | null; kind?: "money" | "pct" | "num" };
 
@@ -60,7 +62,8 @@ function CompareTable({ rows, hasPrev }: { rows: Row[]; hasPrev: boolean }) {
   );
 }
 
-function funnelRows(f: Funnel, p: Funnel | null): Row[] {
+function funnelRows(f: Funnel, p: Funnel | null, kind: LeadKind): Row[] {
+  const who = kind === "freelance" ? "Clients" : "Brands";
   const r = (label: string, key: keyof Funnel, k: Row["kind"] = "num"): Row => ({
     label,
     cur: Number(f[key]),
@@ -68,18 +71,18 @@ function funnelRows(f: Funnel, p: Funnel | null): Row[] {
     kind: k,
   });
   return [
-    r("Brands discovered", "discovered"),
-    r("Brands contacted", "contacted"),
+    r(`${who} discovered`, "discovered"),
+    r(`${who} contacted`, "contacted"),
     r("Messages sent", "messages_sent"),
     r("Replies received", "replied"),
-    r("Interested brands", "interested"),
-    r("Collaborations confirmed", "won"),
+    r(`Interested ${who.toLowerCase()}`, "interested"),
+    r(kind === "freelance" ? "Projects won" : "Collaborations confirmed", "won"),
     r("Reply rate", "reply_rate", "pct"),
     r("Conversion rate (won ÷ contacted)", "conversion_rate", "pct"),
   ];
 }
 
-function FunnelCard({ f, p, title, icon }: { f: Funnel; p: Funnel | null; title: string; icon: React.ReactNode }) {
+function FunnelCard({ f, p, title, icon, kind }: { f: Funnel; p: Funnel | null; title: string; icon: React.ReactNode; kind: LeadKind }) {
   return (
     <Card>
       <CardHeader
@@ -99,7 +102,7 @@ function FunnelCard({ f, p, title, icon }: { f: Funnel; p: Funnel | null; title:
         />
       </div>
       <div className="border-t border-border">
-        <CompareTable rows={funnelRows(f, p)} hasPrev={p !== null} />
+        <CompareTable rows={funnelRows(f, p, kind)} hasPrev={p !== null} />
       </div>
     </Card>
   );
@@ -113,12 +116,16 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const old = prev ? rangeInstants(prev) : null;
   const { supabase } = await requireUser();
 
-  const [bf, rev, pbf, prev_rev] = await Promise.all([
-    pipelineFunnel(supabase, cur.from, cur.to),
+  const [bf, ff, rev, pbf, pff, prev_rev, sent] = await Promise.all([
+    pipelineFunnel(supabase, cur.from, cur.to, "brand"),
+    pipelineFunnel(supabase, cur.from, cur.to, "freelance"),
     revenueSummary(supabase, range.from ?? undefined, range.to ?? undefined),
-    old ? pipelineFunnel(supabase, old.from, old.to) : null,
+    old ? pipelineFunnel(supabase, old.from, old.to, "brand") : null,
+    old ? pipelineFunnel(supabase, old.from, old.to, "freelance") : null,
     prev ? revenueSummary(supabase, prev.from!, prev.to!) : null,
+    listSentMessages(supabase, { from: cur.from ?? undefined, to: cur.to ?? undefined }),
   ]);
+  const sentDays = messagesByDay(sent);
 
   const revRows: Row[] = [
     { label: "Total earnings", cur: Number(rev.total_received), prev: prev_rev ? Number(prev_rev.total_received) : null, kind: "money" },
@@ -143,7 +150,9 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <RangeFilter base="/reports" range={range} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <FunnelCard f={bf} p={pbf} title="Instagram brand deals" icon={<InstagramIcon className="size-4" />} />
+        <FunnelCard f={bf} p={pbf} title="Instagram brand deals" icon={<InstagramIcon className="size-4" />} kind="brand" />
+        <FunnelCard f={ff} p={pff} title="Freelancing" icon={<BriefcaseBusiness className="size-4" />} kind="freelance" />
+        <SentByDayTable days={sentDays} label={range.label} />
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader title="Monthly earnings" description={range.label} />
@@ -158,5 +167,66 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         </div>
       </div>
     </>
+  );
+}
+
+function SentByDayTable({ days, label }: { days: DayTotal[]; label: string }) {
+  const brand = days.reduce((n, d) => n + d.brand, 0);
+  const freelance = days.reduce((n, d) => n + d.freelance, 0);
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Send className="size-4" /> Messages sent by day
+          </span>
+        }
+        description={`${label} · ${num(brand + freelance)} total (${num(brand)} brand deals, ${num(freelance)} freelancing)`}
+      />
+      {days.length === 0 ? (
+        <p className="px-4 py-8 text-center text-xs text-muted">No messages marked as sent in this period.</p>
+      ) : (
+        <div className="max-h-96 overflow-y-auto scrollbar-thin">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-surface">
+              <tr className="border-b border-border text-left text-xs text-muted">
+                <th className="px-4 py-2 font-medium">Date</th>
+                <th className="px-4 py-2 text-right font-medium">Brand deals</th>
+                <th className="px-4 py-2 text-right font-medium">Freelancing</th>
+                <th className="px-4 py-2 text-right font-medium">Total</th>
+                <th className="px-4 py-2 text-right font-medium">Leads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((d) => (
+                <tr key={d.day} className="border-b border-border last:border-0">
+                  <td className="whitespace-nowrap px-4 py-2">{fmtDate(d.day)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {d.brand ? (
+                      <Link href={`/brands?sent=${d.day}`} className="hover:text-accent hover:underline">
+                        {d.brand}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">0</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {d.freelance ? (
+                      <Link href={`/freelance?sent=${d.day}`} className="hover:text-accent hover:underline">
+                        {d.freelance}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">0</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right font-medium tabular-nums">{d.total}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-muted">{d.leadIds.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

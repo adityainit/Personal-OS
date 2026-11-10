@@ -318,6 +318,10 @@ export function registerTools(server: McpServer) {
     },
     run(async (db, a: { lead: string; status: string }) => {
       const l = await resolveLead(db, a.lead);
+      if (a.status === "contacted" && ["new", "researched", "drafted"].includes(l.status)) {
+        const r = await repo.markContacted(db, l.id);
+        return { id: l.id, name: l.name, from: l.status, to: r.lead.status, message_marked_sent: true, follow_up: r.marked?.follow_up ?? null };
+      }
       const u = await repo.updateLead(db, l.id, { status: a.status });
       return { id: u.id, name: u.name, from: l.status, to: u.status };
     }),
@@ -709,14 +713,18 @@ export function registerTools(server: McpServer) {
     "recent_activity",
     {
       title: "Recent activity",
-      description: "Latest CRM activity, optionally for one lead.",
-      inputSchema: z.object({ lead: leadRef.optional(), limit: z.number().int().min(1).max(100).optional() }),
+      description: "Latest CRM activity, optionally for one lead or one pipeline.",
+      inputSchema: z.object({
+        lead: leadRef.optional(),
+        kind: kind.optional().describe("brand or freelance; omit for both"),
+        limit: z.number().int().min(1).max(100).optional(),
+      }),
       annotations: RO,
     },
-    run(async (db, a: { lead?: string; limit?: number }) => {
+    run(async (db, a: { lead?: string; kind?: "brand" | "freelance"; limit?: number }) => {
       const leadId = a.lead ? (await resolveLead(db, a.lead)).id : undefined;
-      const rows = await repo.listActivities(db, { leadId, limit: a.limit ?? 25 });
-      return rows.map((r) => ({ at: r.created_at, type: r.type, summary: r.summary, actor: r.actor, lead: r.lead?.name }));
+      const rows = await repo.listActivities(db, { leadId, kind: a.kind, limit: a.limit ?? 25 });
+      return rows.map((r) => ({ at: r.created_at, type: r.type, summary: r.summary, actor: r.actor, lead: r.lead?.name, kind: r.lead?.kind }));
     }),
   );
 }
