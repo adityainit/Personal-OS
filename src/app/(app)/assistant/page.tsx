@@ -4,6 +4,7 @@ import { CopyButton } from "@/components/ui/misc";
 import { PageHeader } from "@/components/ui/page-header";
 import { env } from "@/lib/env";
 import { getSettings } from "@/lib/domain/repo";
+import { freelanceProfile } from "@/lib/domain/schemas";
 import { requireUser } from "@/lib/supabase/server";
 
 const PROMPTS: [string, string][] = [
@@ -27,7 +28,7 @@ export default async function AssistantPage() {
   const { supabase } = await requireUser();
   const settings = await getSettings(supabase);
   const url = `${env.siteUrl()}/api/mcp`;
-  const profileEmpty = Object.keys(settings.creator_profile ?? {}).length === 0;
+  const profileEmpty = Object.keys(freelanceProfile(settings.creator_profile as Record<string, unknown>)).length === 0;
 
   return (
     <>
@@ -38,7 +39,7 @@ export default async function AssistantPage() {
 
       {profileEmpty ? (
         <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-          Fill in your <a href="/settings" className="font-medium underline">creator profile</a> first, so Claude can match clients to your services.
+          Fill in your <a href="/settings" className="font-medium underline">freelance profile</a> first, so Claude can match clients to your services.
         </div>
       ) : null}
 

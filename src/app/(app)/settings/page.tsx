@@ -1,6 +1,5 @@
-import { BriefcaseBusiness, Database, Download } from "lucide-react";
+import { BriefcaseBusiness, Database, Download, UserRound } from "lucide-react";
 import { saveCreatorProfileAction, saveFollowUpRulesAction } from "@/actions";
-import { InstagramIcon } from "@/components/icons";
 import { ActionForm, SubmitButton } from "@/components/ui/action-form";
 import { buttonClass } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -26,51 +25,27 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Settings" description={`Signed in as ${user.email}`} />
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
+        <Card className="h-fit lg:col-span-2">
           <CardHeader
-            title={<span className="inline-flex items-center gap-2"><InstagramIcon className="size-4" /> Creator profile</span>}
-            description="Claude reads this to find clients that fit you. Keep it current."
+            title={<span className="inline-flex items-center gap-2"><UserRound className="size-4" /> Freelance profile</span>}
+            description="Claude reads this to pick clients that fit you and to write your messages. Keep it current."
           />
           <ActionForm action={saveCreatorProfileAction} reset={false} closeDialog={false} className="grid gap-4 p-4 sm:grid-cols-2">
-            <Field label="Instagram handle">
-              <Input name="instagram_handle" defaultValue={p.instagram_handle ?? ""} placeholder="@aditya" />
-            </Field>
-            <Field label="Niche">
-              <Input name="niche" defaultValue={p.niche ?? ""} placeholder="AI, coding, developer tools, tech education" />
-            </Field>
-            <Field label="Followers">
-              <Input name="followers" type="number" min={0} defaultValue={p.followers ?? ""} />
-            </Field>
-            <Field label="Average views per reel">
-              <Input name="avg_views" type="number" min={0} defaultValue={p.avg_views ?? ""} />
-            </Field>
-            <Field label="Engagement rate (%)">
-              <Input name="engagement_rate" inputMode="decimal" defaultValue={p.engagement_rate ?? ""} />
-            </Field>
-            <Field label="Portfolio / website">
-              <Input name="portfolio_url" defaultValue={p.portfolio_url ?? ""} />
-            </Field>
-            <Field label="Audience" className="sm:col-span-2">
-              <Textarea name="audience" rows={2} defaultValue={p.audience ?? ""} placeholder="Students & early-career developers in India, 18–30…" />
-            </Field>
-            <Field label="Content style" className="sm:col-span-2">
-              <Textarea name="content_style" rows={2} defaultValue={p.content_style ?? ""} placeholder="Short tutorials, AI tool reviews, project builds…" />
-            </Field>
-            <Field label="Past collaborations" className="sm:col-span-2">
-              <Textarea name="past_collaborations" rows={2} defaultValue={p.past_collaborations ?? ""} />
-            </Field>
-            <Field label="Rates" className="sm:col-span-2">
-              <Textarea name="rates" rows={2} defaultValue={p.rates ?? ""} placeholder="Hourly ₹X, projects from ₹Y…" />
-            </Field>
-            <Field label="Freelance services" hint="What you offer freelance clients, and your prices" className="sm:col-span-2">
+            <Field label="Services you offer" hint="What you build for clients" className="sm:col-span-2">
               <Textarea
                 name="freelance_services"
-                rows={2}
+                rows={3}
                 defaultValue={p.freelance_services ?? ""}
-                placeholder="Websites from ₹X, landing pages, automations, AI chatbots…"
+                placeholder="Websites, landing pages, WhatsApp automations, AI chatbots…"
               />
             </Field>
-            <Field label="Short bio" className="sm:col-span-2">
+            <Field label="Rates" hint="Rough prices Claude can mention">
+              <Input name="rates" defaultValue={p.rates ?? ""} placeholder="Websites from ₹X, landing pages from ₹Y" />
+            </Field>
+            <Field label="Portfolio / website">
+              <Input name="portfolio_url" defaultValue={p.portfolio_url ?? ""} placeholder="https://…" />
+            </Field>
+            <Field label="Short bio" hint="Who you are, in a few lines" className="sm:col-span-2">
               <Textarea name="bio" rows={3} defaultValue={p.bio ?? ""} />
             </Field>
             <div className="flex justify-end sm:col-span-2">

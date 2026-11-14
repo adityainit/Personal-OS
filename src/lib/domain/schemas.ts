@@ -199,24 +199,23 @@ export const followUpSchema = z.object({
   reason: optText(500),
 });
 
+/** Your freelance profile: what Claude uses to pick clients and write proposals. */
 export const creatorProfileSchema = z.object({
-  instagram_handle: optText(100),
-  niche: optText(500),
-  followers: optInt(0, 1_000_000_000),
-  avg_views: optInt(0, 1_000_000_000),
-  engagement_rate: z
-    .union([z.number(), z.string()])
-    .nullish()
-    .transform((v) => (v === null || v === undefined || v === "" ? null : Number(v)))
-    .refine((v) => v === null || (Number.isFinite(v) && v >= 0 && v <= 100), "0–100"),
-  audience: optText(2000),
-  content_style: optText(2000),
-  past_collaborations: optText(5000),
-  rates: optText(2000),
   freelance_services: optText(5000),
+  rates: optText(2000),
   portfolio_url: optUrl,
   bio: optText(5000),
 });
+
+/** Only the freelance fields (older profiles also stored Instagram creator details). */
+export function freelanceProfile(p: Record<string, unknown> | null | undefined) {
+  const out: { freelance_services?: string; rates?: string; portfolio_url?: string; bio?: string } = {};
+  for (const k of ["freelance_services", "rates", "portfolio_url", "bio"] as const) {
+    const v = p?.[k];
+    if (typeof v === "string" && v.trim()) out[k] = v;
+  }
+  return out;
+}
 
 /** Follow-up timing for outreach (WhatsApp / email). */
 export const followUpRulesSchema = z.object({

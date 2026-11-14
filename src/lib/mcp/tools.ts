@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import * as repo from "@/lib/domain/repo";
 import { CHANNELS, INTERACTION_TYPES, LEAD_STATUSES } from "@/lib/domain/constants";
-import { compact, creatorProfileSchema } from "@/lib/domain/schemas";
+import { compact, creatorProfileSchema, freelanceProfile } from "@/lib/domain/schemas";
 import { followUpRules } from "@/lib/domain/types";
 import type { Db } from "@/lib/domain/repo";
 import type { Lead } from "@/lib/domain/types";
@@ -146,23 +146,24 @@ export function registerTools(server: McpServer) {
   server.registerTool(
     "get_creator_profile",
     {
-      title: "Get creator profile",
+      title: "Get freelance profile",
       description:
-        "Aditya's profile (niche, freelance services, portfolio, rates). Read this before finding clients.",
+        "Aditya's freelance profile (services, rates, portfolio, bio) and follow-up rules. Read this before finding clients.",
       inputSchema: z.object({}),
       annotations: RO,
     },
     run(async (db) => {
       const s = await repo.getSettings(db);
+      const profile = freelanceProfile(s.creator_profile as Record<string, unknown>);
       return {
-        creator_profile: s.creator_profile,
+        freelance_profile: profile,
         follow_up_rules: {
           ...followUpRules(s),
           meaning: "first = days after the first message, gap = days between later follow-ups, max = follow-ups before stopping",
         },
-        note: Object.keys(s.creator_profile ?? {}).length
+        note: Object.keys(profile).length
           ? undefined
-          : "Profile is empty — ask Aditya for his Instagram handle/niche, or research it and save with update_creator_profile after he confirms.",
+          : "Profile is empty: ask Aditya what services he offers, his rates and portfolio link, and save them with update_creator_profile after he confirms.",
       };
     }),
   );
@@ -170,19 +171,11 @@ export function registerTools(server: McpServer) {
   server.registerTool(
     "update_creator_profile",
     {
-      title: "Update creator profile",
-      description: "Merge fields into Aditya's creator profile. Only use with information Aditya confirmed.",
+      title: "Update freelance profile",
+      description: "Merge fields into Aditya's freelance profile. Only use with information Aditya confirmed.",
       inputSchema: z.object({
-        instagram_handle: z.string().optional(),
-        niche: z.string().optional(),
-        followers: z.number().int().optional(),
-        avg_views: z.number().int().optional(),
-        engagement_rate: z.number().optional(),
-        audience: z.string().optional(),
-        content_style: z.string().optional(),
-        past_collaborations: z.string().optional(),
-        rates: z.string().optional(),
-        freelance_services: z.string().optional().describe("Services Aditya offers freelance clients, and prices"),
+        freelance_services: z.string().optional().describe("Services Aditya offers freelance clients"),
+        rates: z.string().optional().describe("Prices, e.g. websites from ₹X"),
         portfolio_url: z.string().optional(),
         bio: z.string().optional(),
       }),
@@ -191,7 +184,7 @@ export function registerTools(server: McpServer) {
     run(async (db, args: Record<string, unknown>) => {
       const s = await repo.getSettings(db);
       const parsed = creatorProfileSchema.partial().parse(args);
-      const merged = { ...s.creator_profile, ...compact(parsed) };
+      const merged = { ...freelanceProfile(s.creator_profile as Record<string, unknown>), ...compact(parsed) };
       return (await repo.updateSettings(db, { creator_profile: merged })).creator_profile;
     }),
   );

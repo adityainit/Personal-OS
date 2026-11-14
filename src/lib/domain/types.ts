@@ -111,17 +111,10 @@ export interface Activity {
   created_at: string;
 }
 
+/** Your freelance profile (stored in settings.creator_profile). */
 export interface CreatorProfile {
-  instagram_handle?: string;
-  niche?: string;
-  followers?: number;
-  avg_views?: number;
-  engagement_rate?: number;
-  audience?: string;
-  content_style?: string;
-  past_collaborations?: string;
-  rates?: string;
   freelance_services?: string;
+  rates?: string;
   portfolio_url?: string;
   bio?: string;
 }

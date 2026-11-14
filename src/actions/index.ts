@@ -328,7 +328,7 @@ export async function saveCreatorProfileAction(_: ActionResult | null, fd: FormD
     if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
     await repo.updateSettings(supabase, { creator_profile: compact(parsed.data) });
     refresh();
-    return ok("Creator profile saved");
+    return ok("Freelance profile saved");
   } catch (e) {
     return fail(e);
   }
