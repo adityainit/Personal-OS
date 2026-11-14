@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { as, asSystem, createDb, USER_A, USER_B } from "./harness";
 
 let db: PGlite;
@@ -512,6 +514,28 @@ describe("WhatsApp login storage", () => {
     await as(db, USER_A, "insert into whatsapp_auth (key, value) values ('creds', 'secret')");
     expect(await as(db, USER_B, "select * from whatsapp_auth")).toHaveLength(0);
     expect(await as(db, USER_A, "select * from whatsapp_auth")).toHaveLength(1);
+  });
+});
+
+describe("re-running the migration", () => {
+  it("is safe, and moves an earlier version's untouched defaults to 12-14 / 8 a day / 8-15 min", async () => {
+    const sql = readFileSync(join(__dirname, "..", "..", "supabase", "migrations", "20261115000001_whatsapp_autosend.sql"), "utf8");
+    await asSystem(db, `update settings set autosend_daily_limit = 10, autosend_start_hour = 10, autosend_end_hour = 19,
+      autosend_min_gap_minutes = 7, autosend_max_gap_minutes = 25 where owner_id = '${USER_B}'`);
+    await asSystem(db, `update settings set autosend_start_hour = 11 where owner_id = '${USER_A}'`);
+    await db.exec(sql);
+    await db.exec(sql);
+    const [s] = await as<Record<string, number>>(db, USER_B, "select * from settings");
+    expect(s).toMatchObject({
+      autosend_daily_limit: 8,
+      autosend_start_hour: 12,
+      autosend_end_hour: 14,
+      autosend_min_gap_minutes: 8,
+      autosend_max_gap_minutes: 15,
+    });
+    // Customised settings are left alone.
+    const [a] = await as<{ autosend_start_hour: number }>(db, USER_A, "select autosend_start_hour from settings");
+    expect(a.autosend_start_hour).toBe(11);
   });
 });
 

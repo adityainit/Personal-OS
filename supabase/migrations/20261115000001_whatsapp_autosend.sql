@@ -11,65 +11,99 @@
 --   queued   approved: the worker sends it when it's this lead's turn
 --   sending  claimed by the worker right now
 --   failed   not sent; see send_error
+--
+-- Safe to run more than once: it adds whatever is missing and upgrades an earlier version.
 
-create type public.auto_send_state as enum ('off', 'review', 'queued', 'sending', 'failed');
+do $$
+begin
+  if not exists (select 1 from pg_type t join pg_namespace n on n.oid = t.typnamespace
+                  where n.nspname = 'public' and t.typname = 'auto_send_state') then
+    create type public.auto_send_state as enum ('off', 'review', 'queued', 'sending', 'failed');
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Settings
 -- ---------------------------------------------------------------------------
 alter table public.settings
-  add column autosend_enabled boolean not null default false,
-  add column autosend_require_approval boolean not null default true,
-  add column autosend_daily_limit integer not null default 8
+  add column if not exists autosend_enabled boolean not null default false,
+  add column if not exists autosend_require_approval boolean not null default true,
+  add column if not exists autosend_daily_limit integer not null default 8
     check (autosend_daily_limit between 1 and 50),
-  add column autosend_start_hour integer not null default 12
+  add column if not exists autosend_start_hour integer not null default 12
     check (autosend_start_hour between 0 and 23),
-  add column autosend_end_hour integer not null default 14
+  add column if not exists autosend_end_hour integer not null default 14
     check (autosend_end_hour between 1 and 24),
   -- ISO weekdays: 1 = Monday … 7 = Sunday.
-  add column autosend_days integer[] not null default '{1,2,3,4,5,6}'
+  add column if not exists autosend_days integer[] not null default '{1,2,3,4,5,6}'
     check (cardinality(autosend_days) > 0 and autosend_days <@ '{1,2,3,4,5,6,7}'::integer[]),
-  add column autosend_min_gap_minutes integer not null default 8
+  add column if not exists autosend_min_gap_minutes integer not null default 8
     check (autosend_min_gap_minutes between 1 and 240),
-  add column autosend_max_gap_minutes integer not null default 15
+  add column if not exists autosend_max_gap_minutes integer not null default 15
     check (autosend_max_gap_minutes between 1 and 480),
   -- Only auto-message clients Claude researched, once their whole WhatsApp sequence is drafted
   -- (first message + every follow-up up to your follow-up limit).
-  add column autosend_full_sequence_only boolean not null default true,
-  add constraint autosend_hours check (autosend_start_hour < autosend_end_hour),
-  add constraint autosend_gaps check (autosend_min_gap_minutes <= autosend_max_gap_minutes);
+  add column if not exists autosend_full_sequence_only boolean not null default true;
+
+-- Upgrade from an earlier version: new defaults, and move untouched old defaults to them.
+alter table public.settings
+  alter column autosend_daily_limit set default 8,
+  alter column autosend_start_hour set default 12,
+  alter column autosend_end_hour set default 14,
+  alter column autosend_min_gap_minutes set default 8,
+  alter column autosend_max_gap_minutes set default 15;
+update public.settings
+   set autosend_daily_limit = 8, autosend_start_hour = 12, autosend_end_hour = 14,
+       autosend_min_gap_minutes = 8, autosend_max_gap_minutes = 15
+ where autosend_daily_limit = 10 and autosend_start_hour = 10 and autosend_end_hour = 19
+   and autosend_min_gap_minutes = 7 and autosend_max_gap_minutes = 25;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'autosend_hours' and conrelid = 'public.settings'::regclass) then
+    alter table public.settings add constraint autosend_hours check (autosend_start_hour < autosend_end_hour);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'autosend_gaps' and conrelid = 'public.settings'::regclass) then
+    alter table public.settings add constraint autosend_gaps check (autosend_min_gap_minutes <= autosend_max_gap_minutes);
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Outreach: sequence step + auto-send state
 -- ---------------------------------------------------------------------------
 alter table public.outreach
   -- 0 = first message, 1 = follow-up #1, 2 = follow-up #2 …
-  add column step smallint not null default 0 check (step between 0 and 20),
+  add column if not exists step smallint not null default 0 check (step between 0 and 20),
   -- Left null on insert so the trigger below can pick the default from your settings.
-  add column auto_send public.auto_send_state,
-  add column send_after timestamptz,
-  add column send_attempts integer not null default 0,
-  add column send_error text,
-  add column claimed_at timestamptz,
-  add column sent_automatically boolean not null default false,
-  add column wa_message_id text;
+  add column if not exists auto_send public.auto_send_state,
+  add column if not exists send_after timestamptz,
+  add column if not exists send_attempts integer not null default 0,
+  add column if not exists send_error text,
+  add column if not exists claimed_at timestamptz,
+  add column if not exists sent_automatically boolean not null default false,
+  add column if not exists wa_message_id text;
 
 update public.outreach set auto_send = 'off' where auto_send is null;
 alter table public.outreach alter column auto_send set not null;
-alter table public.outreach
-  add constraint outreach_auto_send_whatsapp_drafts
-    check (auto_send = 'off' or (channel = 'whatsapp' and status = 'draft'));
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'outreach_auto_send_whatsapp_drafts') then
+    alter table public.outreach
+      add constraint outreach_auto_send_whatsapp_drafts
+        check (auto_send = 'off' or (channel = 'whatsapp' and status = 'draft'));
+  end if;
+end $$;
 
-create index outreach_auto_send on public.outreach (owner_id, auto_send)
+create index if not exists outreach_auto_send on public.outreach (owner_id, auto_send)
   where auto_send in ('review', 'queued', 'sending', 'failed');
 
 -- Interactions: WhatsApp message ids, so a redelivered message is never recorded twice.
-alter table public.interactions add column wa_message_ids text[] not null default '{}';
+alter table public.interactions add column if not exists wa_message_ids text[] not null default '{}';
 
 -- ---------------------------------------------------------------------------
 -- WhatsApp worker status (one row per user, written by the worker)
 -- ---------------------------------------------------------------------------
-create table public.whatsapp_status (
+create table if not exists public.whatsapp_status (
   owner_id uuid primary key default auth.uid() references auth.users (id) on delete cascade,
   state text not null default 'offline'
     check (state in ('offline', 'starting', 'qr', 'connected', 'logged_out', 'error')),
@@ -83,9 +117,12 @@ create table public.whatsapp_status (
   consecutive_failures integer not null default 0,
   updated_at timestamptz not null default now()
 );
+alter table public.whatsapp_status add column if not exists consecutive_failures integer not null default 0;
 alter table public.whatsapp_status enable row level security;
+drop policy if exists "owner full access" on public.whatsapp_status;
 create policy "owner full access" on public.whatsapp_status for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
+drop trigger if exists touch_updated_at on public.whatsapp_status;
 create trigger touch_updated_at before update on public.whatsapp_status
   for each row execute function private.touch_updated_at();
 revoke all on public.whatsapp_status from anon;
@@ -93,7 +130,7 @@ revoke all on public.whatsapp_status from anon;
 -- The worker's WhatsApp login (linked-device keys), so a restart on a host without a disk
 -- reconnects without a new QR. Values are encrypted by the worker (WA_AUTH_SECRET) before
 -- they reach the database; RLS keeps them to you.
-create table public.whatsapp_auth (
+create table if not exists public.whatsapp_auth (
   owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   key text not null,
   value text not null,
@@ -101,6 +138,7 @@ create table public.whatsapp_auth (
   primary key (owner_id, key)
 );
 alter table public.whatsapp_auth enable row level security;
+drop policy if exists "owner full access" on public.whatsapp_auth;
 create policy "owner full access" on public.whatsapp_auth for all to authenticated
   using (owner_id = (select auth.uid())) with check (owner_id = (select auth.uid()));
 revoke all on public.whatsapp_auth from anon;
@@ -166,6 +204,7 @@ begin
   return new;
 end $$;
 
+drop trigger if exists outreach_auto_send_guard on public.outreach;
 create trigger outreach_auto_send_guard before insert or update on public.outreach
   for each row execute function private.outreach_auto_send_guard();
 
