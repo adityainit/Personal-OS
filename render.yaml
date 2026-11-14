@@ -1,0 +1,32 @@
+# Render Blueprint: the Personal OS WhatsApp worker on Render's free plan.
+# Render → New → Blueprint → pick this repo. You'll be asked for the values marked sync: false.
+services:
+  - type: web
+    name: personal-os-whatsapp
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: worker
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: PERSONAL_OS_EMAIL
+        sync: false
+      - key: PERSONAL_OS_PASSWORD
+        sync: false
+      # Encrypts your WhatsApp login before it's saved in Supabase. Render generates it once.
+      - key: WA_AUTH_SECRET
+        generateValue: true
+      - key: WA_AUTH_STORE
+        value: supabase
+      # Optional: your WhatsApp number (digits, with country code) for a pairing code.
+      - key: WA_PAIRING_PHONE
+        sync: false

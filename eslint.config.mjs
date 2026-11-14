@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The WhatsApp worker is a separate Node program with its own package.json.
+    "worker/**",
   ]),
 ]);
 

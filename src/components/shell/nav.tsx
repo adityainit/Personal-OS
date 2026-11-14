@@ -10,6 +10,7 @@ import {
   Menu,
   Settings,
   X,
+  Zap,
 } from "lucide-react";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/freelance", label: "Freelancing", icon: BriefcaseBusiness },
   { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, badge: "followUps" as const },
+  { href: "/autosend", label: "Auto-send", icon: Zap },
   { href: "/reports", label: "Reports", icon: ChartColumn },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/assistant", label: "Claude Assistant", icon: Bot },

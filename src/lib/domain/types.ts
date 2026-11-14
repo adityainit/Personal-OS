@@ -14,6 +14,8 @@ export type OutreachChannel = "whatsapp" | "email";
 export type OutreachStatus = "draft" | "sent";
 export type InteractionType = "reply" | "note" | "call" | "meeting" | "negotiation" | "decline";
 export type FollowUpStatus = "pending" | "done" | "cancelled";
+/** WhatsApp auto-send state of a draft. */
+export type AutoSendState = "off" | "review" | "queued" | "sending" | "failed";
 export type Actor = "me" | "claude" | "system";
 
 export interface Lead {
@@ -66,6 +68,14 @@ export interface Outreach {
   body: string;
   status: OutreachStatus;
   sent_at: string | null;
+  /** 0 = first message, 1 = follow-up #1, … */
+  step: number;
+  auto_send: AutoSendState;
+  /** Don't auto-send before this time. */
+  send_after: string | null;
+  send_attempts: number;
+  send_error: string | null;
+  sent_automatically: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -122,6 +132,38 @@ export interface Settings {
   freelance_first_follow_up_days: number;
   freelance_follow_up_gap_days: number;
   freelance_max_follow_ups: number;
+  autosend_enabled: boolean;
+  autosend_require_approval: boolean;
+  autosend_daily_limit: number;
+  autosend_start_hour: number;
+  autosend_end_hour: number;
+  /** ISO weekdays, 1 = Monday … 7 = Sunday. */
+  autosend_days: number[];
+  autosend_min_gap_minutes: number;
+  autosend_max_gap_minutes: number;
+  /** Only clients Claude researched, once the first message and every follow-up are drafted. */
+  autosend_full_sequence_only: boolean;
+}
+
+export type WhatsAppState = "offline" | "starting" | "qr" | "connected" | "logged_out" | "error";
+
+/** Written by the WhatsApp worker. */
+export interface WhatsAppStatus {
+  owner_id: string;
+  state: WhatsAppState;
+  qr: string | null;
+  pairing_code: string | null;
+  phone: string | null;
+  last_error: string | null;
+  last_seen_at: string | null;
+  next_send_at: string | null;
+  consecutive_failures: number;
+  updated_at: string;
+}
+
+/** "First message", "Follow-up #1" … */
+export function stepLabel(step: number) {
+  return step === 0 ? "First message" : `Follow-up #${step}`;
 }
 
 export interface FollowUpRules {

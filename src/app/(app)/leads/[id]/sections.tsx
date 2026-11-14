@@ -1,4 +1,5 @@
-import { CalendarPlus, Check, Clock, ExternalLink, Mail, MessageCircle, MessageSquarePlus, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
+import { CalendarPlus, Check, Clock, ExternalLink, Hand, Mail, MessageCircle, MessageSquarePlus, Pencil, Phone, Plus, RotateCcw, Send, Trash2, X, Zap } from "lucide-react";
+import Link from "next/link";
 import {
   addContactAction,
   cancelFollowUpAction,
@@ -9,6 +10,7 @@ import {
   markSentAction,
   recordInteractionAction,
   saveDraftAction,
+  setAutoSendAction,
   setFollowUpAction,
   snoozeFollowUpAction,
   updateContactAction,
@@ -25,7 +27,7 @@ import { ActionButton, CopyButton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/page-header";
 import { CHANNELS, CHANNEL_LABEL, INTERACTION_LABEL, INTERACTION_TYPES } from "@/lib/domain/constants";
 import { formatPhone } from "@/lib/domain/phone";
-import { describeRules, followUpRules, type Contact, type FollowUp, type Interaction, type Lead, type Outreach, type Settings } from "@/lib/domain/types";
+import { describeRules, followUpRules, stepLabel, type Contact, type FollowUp, type Interaction, type Lead, type Outreach, type Settings } from "@/lib/domain/types";
 import { buttonClass } from "@/components/ui/button";
 import { cn, dueLabel, externalUrl, fmtDateTime, instagramUrl, relative, whatsappUrl } from "@/lib/utils";
 
@@ -249,16 +251,27 @@ export function Contacts({ lead, contacts }: { lead: Lead; contacts: Contact[] }
 // ---------------------------------------------------------------------------
 // Outreach
 // ---------------------------------------------------------------------------
+const STEPS = [0, 1, 2, 3, 4];
+
 function DraftFields({ o }: { o?: Outreach }) {
   const channels = CHANNELS;
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Channel">
           <Select name="channel" defaultValue={o?.channel ?? channels[0]}>
             {channels.map((c) => (
               <option key={c} value={c}>
                 {CHANNEL_LABEL[c]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Sequence">
+          <Select name="step" defaultValue={String(o?.step ?? 0)}>
+            {STEPS.map((n) => (
+              <option key={n} value={n}>
+                {stepLabel(n)}
               </option>
             ))}
           </Select>
@@ -270,15 +283,82 @@ function DraftFields({ o }: { o?: Outreach }) {
       <Field label="Message">
         <Textarea name="body" rows={10} required defaultValue={o?.body ?? ""} />
       </Field>
+      <Field label="Don't auto-send before (optional)" hint="WhatsApp auto-send only. Leave empty to send at the next free slot.">
+        <DateTimeField name="send_after" defaultValue={o?.send_after ?? null} />
+      </Field>
       <div className="flex justify-end">
-        <SubmitButton>{o ? "Save draft" : "Save draft"}</SubmitButton>
+        <SubmitButton>Save draft</SubmitButton>
       </div>
     </div>
   );
 }
 
+/** Auto-send state of a WhatsApp draft. */
+export function AutoSendBadge({ o }: { o: Pick<Outreach, "auto_send" | "send_after" | "channel"> }) {
+  if (o.channel !== "whatsapp") return null;
+  switch (o.auto_send) {
+    case "review":
+      return <Badge className="border-warning/40 bg-warning/10 text-warning">Needs approval</Badge>;
+    case "queued":
+      return (
+        <Badge className="border-accent/40 bg-accent-soft text-accent">
+          <Zap className="size-3" /> Auto-send
+          {o.send_after && new Date(o.send_after) > new Date() ? ` · after ${fmtDateTime(o.send_after)}` : ""}
+        </Badge>
+      );
+    case "sending":
+      return <Badge className="border-accent/40 bg-accent-soft text-accent">Sending…</Badge>;
+    case "failed":
+      return <Badge className="border-danger/40 bg-danger/10 text-danger">Not sent</Badge>;
+    default:
+      return <Badge>Manual</Badge>;
+  }
+}
+
+/** Approve / queue / retry / send-myself buttons for a WhatsApp draft. */
+export function AutoSendControls({ o }: { o: Pick<Outreach, "id" | "auto_send" | "channel" | "status"> }) {
+  if (o.channel !== "whatsapp" || o.status !== "draft") return null;
+  const manual = (
+    <ActionButton action={setAutoSendAction.bind(null, o.id, "off")} variant="ghost" title="Take off the queue: I'll send it myself">
+      <Hand /> Send myself
+    </ActionButton>
+  );
+  switch (o.auto_send) {
+    case "review":
+      return (
+        <>
+          <ActionButton action={setAutoSendAction.bind(null, o.id, "queued")} variant="primary" title="Approve for automatic sending">
+            <Check /> Approve
+          </ActionButton>
+          {manual}
+        </>
+      );
+    case "queued":
+      return manual;
+    case "failed":
+      return (
+        <>
+          <ActionButton action={setAutoSendAction.bind(null, o.id, "queued")} title="Try sending again">
+            <RotateCcw /> Retry
+          </ActionButton>
+          {manual}
+        </>
+      );
+    case "off":
+      return (
+        <ActionButton action={setAutoSendAction.bind(null, o.id, "queued")} title="Send this automatically from your WhatsApp">
+          <Zap /> Auto-send
+        </ActionButton>
+      );
+    default:
+      return null;
+  }
+}
+
 export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outreach: Outreach[]; settings: Settings }) {
-  const drafts = outreach.filter((o) => o.status === "draft");
+  const drafts = outreach
+    .filter((o) => o.status === "draft")
+    .sort((a, b) => a.step - b.step || a.created_at.localeCompare(b.created_at));
   const sent = outreach.filter((o) => o.status === "sent");
   const closed = ["won", "lost", "do_not_contact"].includes(lead.status);
   const sentCount = sent.length;
@@ -288,8 +368,25 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-accent/30 bg-accent-soft/50 px-4 py-3 text-xs text-fg/80">
-        You send every message yourself. Copy a draft, send it on WhatsApp or email, then click{" "}
-        <span className="font-medium">Mark as sent</span> — a follow-up is scheduled automatically.
+        {settings.autosend_enabled ? (
+          <>
+            <span className="font-medium">Auto-send is on.</span> Approved WhatsApp drafts go out from your WhatsApp
+            during your sending hours: the first message, then each follow-up when it&apos;s due. A reply stops the
+            rest. Emails you still send yourself.{" "}
+            <Link href="/autosend" className="font-medium text-accent hover:underline">
+              Auto-send settings
+            </Link>
+          </>
+        ) : (
+          <>
+            You send every message yourself. Copy a draft, send it on WhatsApp or email, then click{" "}
+            <span className="font-medium">Mark as sent</span> — a follow-up is scheduled automatically. Want WhatsApp
+            messages sent for you?{" "}
+            <Link href="/autosend" className="font-medium text-accent hover:underline">
+              Set up auto-send
+            </Link>
+          </>
+        )}
       </div>
       <Card>
         <CardHeader
@@ -312,11 +409,14 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
             {drafts.map((o) => (
               <li key={o.id} className="p-4">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge>{CHANNEL_LABEL[o.channel]}</Badge>
+                    <Badge>{stepLabel(o.step)}</Badge>
+                    {settings.autosend_enabled || o.auto_send !== "off" ? <AutoSendBadge o={o} /> : null}
                     <span className="text-[11px] text-muted">Updated {relative(o.updated_at)}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-1">
+                    {!closed ? <AutoSendControls o={o} /> : null}
                     <CopyButton text={o.subject ? `Subject: ${o.subject}\n\n${o.body}` : o.body} />
                     {o.channel === "whatsapp" && lead.phone_e164 ? (
                       <a
@@ -337,7 +437,7 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
                     <ActionButton action={deleteDraftAction.bind(null, o.id)} confirm="Delete?" variant="ghost" size="icon-sm" title="Delete draft">
                       <Trash2 />
                     </ActionButton>
-                    {!closed ? (
+                    {!closed && o.auto_send !== "sending" ? (
                       <Dialog trigger={<><Send /> Mark as sent</>} title="Mark as sent" description="Only do this after you've sent it yourself." size="sm">
                         <ActionForm action={markSentAction.bind(null, o.id)}>
                           <div className="flex flex-col gap-4">
@@ -364,6 +464,9 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
                 </div>
                 {o.subject ? <p className="mb-1 text-sm font-medium">{o.subject}</p> : null}
                 <p className="prose-text rounded-lg bg-surface-2 p-3 text-sm">{o.body}</p>
+                {o.auto_send === "failed" && o.send_error ? (
+                  <p className="mt-2 text-xs text-danger">{o.send_error}</p>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -377,8 +480,14 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
           <ul className="divide-y divide-border">
             {sent.map((o) => (
               <li key={o.id} className="p-4">
-                <div className="mb-1 flex items-center gap-2">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
                   <Badge>{CHANNEL_LABEL[o.channel]}</Badge>
+                  <Badge>{stepLabel(o.step)}</Badge>
+                  {o.sent_automatically ? (
+                    <Badge className="border-accent/40 bg-accent-soft text-accent">
+                      <Zap className="size-3" /> Sent automatically
+                    </Badge>
+                  ) : null}
                   <span className="text-[11px] text-muted">Sent {fmtDateTime(o.sent_at)}</span>
                 </div>
                 <details>

@@ -1,0 +1,22 @@
+{
+  "name": "personal-os-whatsapp-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sends queued Personal OS WhatsApp messages from your own WhatsApp and records replies.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.mjs",
+    "check": "node --env-file-if-exists=.env src/index.mjs --check",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.9"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "baileys": "7.0.0-rc14",
+    "pino": "^9.7.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

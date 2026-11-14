@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import * as repo from "@/lib/domain/repo";
 import {
+  autosendSettingsSchema,
   compact,
   creatorProfileSchema,
   firstError,
@@ -177,6 +178,63 @@ export async function markSentAction(id: string, _: ActionResult | null, fd: For
         ? `Marked as sent. Follow-up due ${new Date(res.follow_up.due_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.`
         : "Marked as sent. No follow-up scheduled.",
     );
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp auto-send
+// ---------------------------------------------------------------------------
+const AUTO_SEND_MESSAGE = {
+  queued: "Queued: it will be sent automatically",
+  review: "Moved back to review",
+  off: "Taken off the queue: you'll send this one yourself",
+} as const;
+
+export async function setAutoSendAction(id: string, state: "off" | "review" | "queued"): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireUser();
+    await repo.setAutoSend(supabase, id, state);
+    refresh();
+    return ok(AUTO_SEND_MESSAGE[state]);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Approve all drafts waiting for review, or just one client's. */
+export async function approveAutoSendAction(leadId?: string): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireUser();
+    const n = await repo.approveAutoSend(supabase, { leadId });
+    refresh();
+    return ok(n ? `Approved ${n} message${n === 1 ? "" : "s"}` : "Nothing to approve");
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function saveAutosendSettingsAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireUser();
+    const parsed = autosendSettingsSchema.safeParse(formToObject(fd));
+    if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
+    await repo.updateSettings(supabase, parsed.data);
+    refresh();
+    return ok(parsed.data.autosend_enabled ? "Auto-send settings saved" : "Saved. Auto-send is paused.");
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Turn auto-send on or off in one click. */
+export async function toggleAutosendAction(enabled: boolean): Promise<ActionResult> {
+  try {
+    const { supabase } = await requireUser();
+    await repo.updateSettings(supabase, { autosend_enabled: enabled });
+    refresh();
+    return ok(enabled ? "Auto-send is on" : "Auto-send paused: nothing will be sent");
   } catch (e) {
     return fail(e);
   }

@@ -7,7 +7,7 @@ import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
 
 const PROMPTS: [string, string][] = [
-  ["Client discovery", "Read my profile, then find 10 businesses in my city that need a better website or online presence. Research each one properly and add the qualified ones with a public phone number to my CRM, with separate WhatsApp and email drafts."],
+  ["Client discovery", "Read my profile, then find 10 businesses in my city that need a better website or online presence. Research each one properly and add the qualified ones with a public phone number to my CRM, with a WhatsApp first message, WhatsApp follow-ups (step 1 and 2) and an email draft."],
   ["Add a client", "Add Sharma Dental Clinic to my CRM: research them first, find their public phone number, and draft a WhatsApp message."],
   ["Log WhatsApp", "I just sent the WhatsApp message to Sharma Dental. Record it."],
   ["Update status", "Update Sharma Dental's status to Interested."],
@@ -81,10 +81,10 @@ export default async function AssistantPage() {
             {[
               [true, "Researches businesses on the web"],
               [true, "Saves clients with their phone number, research and fit scores (never invents contact details)"],
-              [true, "Writes separate WhatsApp and email drafts for you to edit"],
+              [true, "Writes WhatsApp sequences (first message + follow-ups) and email drafts for you to edit"],
               [true, "Updates statuses and follow-ups when you ask"],
               [true, "Prevents duplicate leads and duplicate outreach"],
-              [false, "Never sends WhatsApp messages or emails"],
+              [false, "Never sends or approves messages: only drafts you approve go out via your WhatsApp worker"],
               [false, "Cannot delete records — only you can, from this site"],
               [false, "Cannot see anything outside your account"],
             ].map(([okay, t]) => (

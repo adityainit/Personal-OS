@@ -1,0 +1,4 @@
+node_modules/
+# Your WhatsApp login. Anyone with this folder can use your WhatsApp: never commit or share it.
+auth/
+.env

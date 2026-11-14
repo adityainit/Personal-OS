@@ -17,6 +17,7 @@ import {
 } from "./schemas";
 import type {
   Activity,
+  AutoSendState,
   Contact,
   DashboardStats,
   FollowUp,
@@ -26,6 +27,7 @@ import type {
   LeadStatus,
   Outreach,
   Settings,
+  WhatsAppStatus,
 } from "./types";
 import type { SentMessage } from "./messages";
 
@@ -213,9 +215,14 @@ export async function deleteContact(db: Db, id: string) {
 // ---------------------------------------------------------------------------
 // Outreach
 // ---------------------------------------------------------------------------
-export async function saveDraft(db: Db, leadId: string, input: unknown) {
+/**
+ * Saves a draft. New WhatsApp drafts join the auto-send flow by default (review or queue, per
+ * Settings); `manual` keeps it out, for messages you're recording as already sent.
+ */
+export async function saveDraft(db: Db, leadId: string, input: unknown, opts: { manual?: boolean } = {}) {
   const data = parse(outreachSchema, input);
-  return check(await db.from("outreach").insert({ ...data, lead_id: leadId }).select("*").single()) as Outreach;
+  const row = { ...data, lead_id: leadId, ...(opts.manual ? { auto_send: "off" as const } : {}) };
+  return check(await db.from("outreach").insert(row).select("*").single()) as Outreach;
 }
 
 export async function updateDraft(db: Db, id: string, input: unknown) {
@@ -249,6 +256,102 @@ export async function markSent(
 }
 
 // ---------------------------------------------------------------------------
+// WhatsApp auto-send
+// ---------------------------------------------------------------------------
+const CLOSED: LeadStatus[] = ["replied", "interested", "negotiating", "won", "lost", "do_not_contact"];
+
+/**
+ * Put a draft in or out of the auto-send queue. "queued" means approved: the WhatsApp worker
+ * sends it when it's this client's turn (first message, or when a follow-up falls due).
+ */
+export async function setAutoSend(db: Db, outreachId: string, state: Extract<AutoSendState, "off" | "review" | "queued">) {
+  const o = check(
+    await db.from("outreach").select("*, lead:leads!inner(name, status, phone_e164)").eq("id", outreachId).maybeSingle(),
+  ) as (Outreach & { lead: Pick<Lead, "name" | "status" | "phone_e164"> }) | null;
+  if (!o) throw new RepoError("Message not found", "not_found");
+  if (state !== "off") {
+    if (o.status === "sent") throw new RepoError("This message was already sent", "invalid");
+    if (o.channel !== "whatsapp") throw new RepoError("Only WhatsApp messages can be sent automatically", "invalid");
+    if (o.auto_send === "sending") throw new RepoError("The worker is sending this right now", "invalid");
+    if (!o.lead.phone_e164) throw new RepoError(`${o.lead.name} has no phone number`, "invalid");
+    if (CLOSED.includes(o.lead.status)) {
+      throw new RepoError(
+        `${o.lead.name} is ${o.lead.status.replace(/_/g, " ")}: automatic messages only go to clients who haven't replied yet.`,
+        "invalid",
+      );
+    }
+  } else if (o.auto_send === "sending") {
+    throw new RepoError("The worker is sending this right now", "invalid");
+  }
+  return check(await db.from("outreach").update({ auto_send: state }).eq("id", outreachId).select("*").single()) as Outreach;
+}
+
+/** Approve every WhatsApp draft waiting for review (optionally for one client). Returns how many. */
+export async function approveAutoSend(db: Db, opts: { leadId?: string } = {}) {
+  let q = db
+    .from("outreach")
+    .select("id, lead:leads!inner(status, phone_e164)")
+    .eq("auto_send", "review")
+    .eq("status", "draft")
+    .eq("channel", "whatsapp");
+  if (opts.leadId) q = q.eq("lead_id", opts.leadId);
+  const rows = check(await q) as unknown as { id: string; lead: Pick<Lead, "status" | "phone_e164"> }[];
+  const ids = rows.filter((r) => r.lead.phone_e164 && !CLOSED.includes(r.lead.status)).map((r) => r.id);
+  if (ids.length) check(await db.from("outreach").update({ auto_send: "queued" }).in("id", ids));
+  return ids.length;
+}
+
+export type QueueItem = Outreach & {
+  lead: Pick<Lead, "id" | "name" | "status" | "phone_e164" | "fit_score" | "industry" | "location" | "source">;
+};
+
+const QUEUE_SELECT = "*, lead:leads!inner(id, name, status, phone_e164, fit_score, industry, location, source)";
+
+/** WhatsApp sequence steps drafted or sent for each client (to show which follow-ups are missing). */
+export async function whatsappStepsByLead(db: Db, leadIds: string[]) {
+  const out = new Map<string, Set<number>>();
+  if (leadIds.length === 0) return out;
+  const rows = check(
+    await db.from("outreach").select("lead_id, step").eq("channel", "whatsapp").in("lead_id", leadIds),
+  ) as { lead_id: string; step: number }[];
+  for (const r of rows) {
+    const set = out.get(r.lead_id) ?? new Set<number>();
+    set.add(r.step);
+    out.set(r.lead_id, set);
+  }
+  return out;
+}
+
+/** Every WhatsApp draft in the auto-send flow (review, queued, sending, failed). */
+export async function listAutoSendQueue(db: Db) {
+  return check(
+    await db
+      .from("outreach")
+      .select(QUEUE_SELECT)
+      .neq("auto_send", "off")
+      .order("created_at", { ascending: true })
+      .limit(1000),
+  ) as QueueItem[];
+}
+
+/** Messages the worker sent since `from` (default: start of today, India time). */
+export async function listAutoSent(db: Db, opts: { from?: string; limit?: number } = {}) {
+  return check(
+    await db
+      .from("outreach")
+      .select(QUEUE_SELECT)
+      .eq("sent_automatically", true)
+      .gte("sent_at", opts.from ?? startOfDayInTz().toISOString())
+      .order("sent_at", { ascending: false })
+      .limit(opts.limit ?? 200),
+  ) as QueueItem[];
+}
+
+export async function getWhatsAppStatus(db: Db) {
+  return check(await db.from("whatsapp_status").select("*").maybeSingle()) as WhatsAppStatus | null;
+}
+
+// ---------------------------------------------------------------------------
 // Interactions
 // ---------------------------------------------------------------------------
 /**
@@ -272,7 +375,7 @@ export async function markContacted(db: Db, leadId: string, opts: { sentAt?: str
   const draft =
     drafts.find((o) => o.channel === preferred) ??
     drafts[0] ??
-    (await saveDraft(db, leadId, { channel: preferred, body: "(Message sent outside Personal OS)" }));
+    (await saveDraft(db, leadId, { channel: preferred, body: "(Message sent outside Personal OS)" }, { manual: true }));
   const marked = await markSent(db, draft.id, { sentAt: opts.sentAt ?? null, force: true });
   return { lead: await getLead(db, leadId), marked };
 }

@@ -30,6 +30,13 @@ Your role: research assistant and CRM operator. Aditya personally handles ALL co
   find a public phone number for a business, don't add it.
 - Use mark_outreach_sent / record_interaction only when Aditya explicitly tells you he sent something or got a reply.
   Follow-ups are then scheduled by his follow-up rules (see get_creator_profile, follow_up_rules).
+- WhatsApp sequences: for each client save the first WhatsApp message with step 0, and each follow-up as its own
+  WhatsApp draft with step 1, 2, ... (up to follow_up_rules.max), all in the same run. Automatic sending only
+  happens for clients you created and researched that have the complete sequence, so never leave steps missing. Each follow-up must read well on its own, be shorter
+  than the previous message and add something new (a relevant idea, example or question); never just "following up".
+  Aditya's own WhatsApp worker may send approved drafts automatically under his rules (daily limit, business hours,
+  approval). You still never send anything and never approve drafts: that is always Aditya's decision.
+  Don't put links in the first message.
 - Leads can be referenced by id or exact name.
 `.trim();
 
@@ -102,6 +109,13 @@ const draftInput = z.object({
   channel: channel.describe("whatsapp or email only."),
   subject: z.string().optional().describe("Email subject (email only)"),
   body: z.string().min(1),
+  step: z
+    .number()
+    .int()
+    .min(0)
+    .max(20)
+    .optional()
+    .describe("Place in the sequence: 0 = first message (default), 1 = follow-up #1, 2 = follow-up #2 ..."),
 });
 
 const leadInputShape = {
@@ -396,14 +410,21 @@ export function registerTools(server: McpServer) {
     {
       title: "Save outreach draft",
       description:
-        "Save a personalised draft for Aditya to review and send himself. whatsapp or email. Never sends anything.",
+        "Save a personalised draft (whatsapp or email). Save the first message as step 0 and each follow-up as step 1, 2, ... Never sends anything: Aditya reviews drafts, and only drafts he approves may be sent by his own WhatsApp worker.",
       inputSchema: z.object({ lead: leadRef, ...draftInput.shape }),
       annotations: WRITE,
     },
-    run(async (db, a: { lead: string; channel: string; subject?: string; body: string }) => {
+    run(async (db, a: { lead: string; channel: string; subject?: string; body: string; step?: number }) => {
       const l = await resolveLead(db, a.lead);
-      const d = await repo.saveDraft(db, l.id, { channel: a.channel, subject: a.subject, body: a.body });
-      return { draft_id: d.id, lead: l.name, channel: d.channel, url: `${link(l.id)}?tab=outreach` };
+      const d = await repo.saveDraft(db, l.id, { channel: a.channel, subject: a.subject, body: a.body, step: a.step });
+      return {
+        draft_id: d.id,
+        lead: l.name,
+        channel: d.channel,
+        step: d.step,
+        auto_send: d.auto_send,
+        url: `${link(l.id)}?tab=outreach`,
+      };
     }),
   );
 
@@ -412,10 +433,16 @@ export function registerTools(server: McpServer) {
     {
       title: "Update outreach draft",
       description: "Edit an unsent draft.",
-      inputSchema: z.object({ draft_id: z.uuid(), channel: channel.optional(), subject: z.string().optional(), body: z.string().optional() }),
+      inputSchema: z.object({
+        draft_id: z.uuid(),
+        channel: channel.optional(),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+        step: draftInput.shape.step,
+      }),
       annotations: WRITE,
     },
-    run(async (db, a: { draft_id: string; channel?: string; subject?: string; body?: string }) => {
+    run(async (db, a: { draft_id: string; channel?: string; subject?: string; body?: string; step?: number }) => {
       const { draft_id, ...patch } = a;
       return repo.updateDraft(db, draft_id, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
     }),
@@ -443,7 +470,7 @@ export function registerTools(server: McpServer) {
       let draftId = a.draft_id;
       if (!draftId) {
         if (!a.channel) throw new repo.RepoError("Provide draft_id, or channel (+ optional message)", "invalid");
-        const d = await repo.saveDraft(db, l.id, { channel: a.channel, body: a.message || "(sent outside the CRM)" });
+        const d = await repo.saveDraft(db, l.id, { channel: a.channel, body: a.message || "(sent outside the CRM)" }, { manual: true });
         draftId = d.id;
       }
       const res = await repo.markSent(db, draftId, { followUpDays: a.follow_up_days, sentAt: a.sent_at, force: a.force });

@@ -1,0 +1,23 @@
+# systemd service for the Personal OS WhatsApp worker.
+# Edit User and WorkingDirectory if your folder isn't /home/ubuntu/worker, then:
+#   sudo cp personal-os-whatsapp.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now personal-os-whatsapp
+
+[Unit]
+Description=Personal OS WhatsApp worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/worker
+ExecStart=/usr/bin/node --env-file=.env src/index.mjs
+Restart=always
+RestartSec=10
+# Give an in-progress send time to finish and be recorded.
+TimeoutStopSec=45
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

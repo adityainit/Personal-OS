@@ -146,7 +146,46 @@ export const outreachSchema = z.object({
   subject: optText(300),
   body: z.string().trim().min(1, "Message is empty").max(20_000),
   contact_id: z.uuid().nullish(),
+  /** 0 = first message, 1 = follow-up #1, … (omitted = keep / default 0). */
+  step: optInt(0, 20).transform((v) => v ?? undefined),
+  /** Don't auto-send before this time ("" clears it). */
+  send_after: z
+    .union([z.iso.datetime({ offset: true }), z.literal("")])
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null)),
 });
+
+export const AUTO_SEND_STATES = ["off", "review", "queued", "sending", "failed"] as const;
+
+/** WhatsApp auto-send settings. */
+export const autosendSettingsSchema = z
+  .object({
+    autosend_enabled: z.union([z.boolean(), z.string()]).nullish().transform((v) => v === true || v === "on"),
+    autosend_require_approval: z.union([z.boolean(), z.string()]).nullish().transform((v) => v === true || v === "on"),
+    autosend_full_sequence_only: z.union([z.boolean(), z.string()]).nullish().transform((v) => v === true || v === "on"),
+    autosend_daily_limit: optInt(1, 50).transform((v) => v ?? 8),
+    autosend_start_hour: optInt(0, 23).transform((v) => v ?? 12),
+    autosend_end_hour: optInt(1, 24).transform((v) => v ?? 14),
+    autosend_days: z
+      .union([z.array(z.union([z.string(), z.number()])), z.string(), z.number()])
+      .nullish()
+      .transform((v) =>
+        [...new Set((Array.isArray(v) ? v : v === null || v === undefined || v === "" ? [] : [v]).map(Number))]
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7)
+          .sort(),
+      )
+      .refine((d) => d.length > 0, "Pick at least one day"),
+    autosend_min_gap_minutes: optInt(1, 240).transform((v) => v ?? 8),
+    autosend_max_gap_minutes: optInt(1, 480).transform((v) => v ?? 15),
+  })
+  .refine((s) => s.autosend_start_hour < s.autosend_end_hour, {
+    path: ["autosend_end_hour"],
+    message: "Must be after the start hour",
+  })
+  .refine((s) => s.autosend_min_gap_minutes <= s.autosend_max_gap_minutes, {
+    path: ["autosend_max_gap_minutes"],
+    message: "Must be at least the minimum gap",
+  });
 
 export const interactionSchema = z.object({
   type: z.enum(INTERACTION_TYPES as [string, ...string[]]),
