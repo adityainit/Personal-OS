@@ -8,29 +8,23 @@ import { z } from "zod";
 import { startOfDayInTz, ymd } from "@/lib/utils";
 import {
   contactSchema,
-  dealSchema,
   firstError,
   followUpSchema,
   interactionSchema,
   leadCreateSchema,
   leadUpdateSchema,
   outreachSchema,
-  paymentSchema,
 } from "./schemas";
 import type {
   Activity,
   Contact,
   DashboardStats,
-  Deal,
   FollowUp,
   Funnel,
   Interaction,
   Lead,
-  LeadKind,
   LeadStatus,
   Outreach,
-  Payment,
-  RevenueSummary,
   Settings,
 } from "./types";
 import type { SentMessage } from "./messages";
@@ -69,7 +63,6 @@ function parse<S extends z.ZodType>(schema: S, input: unknown): z.output<S> {
 // Leads
 // ---------------------------------------------------------------------------
 export interface LeadFilters {
-  kind?: LeadKind;
   status?: LeadStatus | LeadStatus[];
   q?: string;
   minFit?: number;
@@ -81,7 +74,6 @@ export interface LeadFilters {
 
 export async function listLeads(db: Db, f: LeadFilters = {}) {
   let q = db.from("leads").select("*");
-  if (f.kind) q = q.eq("kind", f.kind);
   if (f.status) q = Array.isArray(f.status) ? q.in("status", f.status) : q.eq("status", f.status);
   if (f.minFit !== undefined) q = q.gte("fit_score", f.minFit);
   if (f.tag) q = q.contains("tags", [f.tag.toLowerCase()]);
@@ -111,13 +103,12 @@ export async function getLead(db: Db, id: string) {
 }
 
 export async function getLeadBundle(db: Db, id: string) {
-  const [lead, contacts, outreach, interactions, followUps, deals, activities] = await Promise.all([
+  const [lead, contacts, outreach, interactions, followUps, activities] = await Promise.all([
     getLead(db, id),
     db.from("contacts").select("*").eq("lead_id", id).order("created_at"),
     db.from("outreach").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
     db.from("interactions").select("*").eq("lead_id", id).order("occurred_at", { ascending: false }),
     db.from("follow_ups").select("*").eq("lead_id", id).order("due_at", { ascending: false }),
-    db.from("deals").select("*, payments(*)").eq("lead_id", id).order("created_at", { ascending: false }),
     db.from("activities").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(300),
   ]);
   return {
@@ -126,14 +117,12 @@ export async function getLeadBundle(db: Db, id: string) {
     outreach: check(outreach) as Outreach[],
     interactions: check(interactions) as Interaction[],
     followUps: check(followUps) as FollowUp[],
-    deals: check(deals) as (Deal & { payments: Payment[] })[],
     activities: check(activities) as Activity[],
   };
 }
 
 export interface DuplicateMatch {
   id: string;
-  kind: LeadKind;
   name: string;
   status: LeadStatus;
   match_type: "website" | "instagram" | "phone" | "name";
@@ -147,7 +136,6 @@ export async function checkDuplicate(
     website?: string | null;
     instagram?: string | null;
     phone?: string | null;
-    kind?: LeadKind | null;
   },
 ) {
   return check(
@@ -156,18 +144,17 @@ export async function checkDuplicate(
       p_website: p.website ?? null,
       p_instagram: p.instagram ?? null,
       p_phone: p.phone ?? null,
-      p_kind: p.kind ?? null,
     }),
   ) as DuplicateMatch[];
 }
 
 /**
- * Creates a lead unless it already exists in the same pipeline (brand deals or freelancing).
- * - Same website or Instagram handle (or, for freelance clients, the same phone number): always the
- *   same business, so the existing lead is returned.
- * - Same phone number or a very similar name: probably the same business, so it is returned too
- *   unless `allowSimilar` is set (the user confirmed it is a different business).
- * Phone numbers are validated here and by a database trigger; freelance clients must have one.
+ * Creates a lead unless it already exists.
+ * - Same website, Instagram handle or phone number: always the same business, so the existing
+ *   lead is returned.
+ * - A very similar name: probably the same business, so it is returned too unless `allowSimilar`
+ *   is set (the user confirmed it is a different business).
+ * Phone numbers are validated here and by a database trigger; every client must have one.
  */
 export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: boolean } = {}) {
   const data = parse(leadCreateSchema, input);
@@ -177,16 +164,10 @@ export async function createLead(db: Db, input: unknown, opts: { allowSimilar?: 
     website: lead.website,
     instagram: lead.instagram_handle,
     phone: lead.phone_e164,
-    kind: lead.kind,
   });
-  const exact = dups.find(
-    (d) =>
-      d.match_type === "website" ||
-      d.match_type === "instagram" ||
-      (lead.kind === "freelance" && d.match_type === "phone"),
-  );
+  const exact = dups.find((d) => d.match_type === "website" || d.match_type === "instagram" || d.match_type === "phone");
   if (exact) return { lead: await getLead(db, exact.id), duplicate: true as const, similar: dups };
-  const probable = dups.find((d) => d.match_type === "phone" || (d.match_type === "name" && d.score >= 0.8));
+  const probable = dups.find((d) => d.match_type === "name" && d.score >= 0.8);
   if (probable && !opts.allowSimilar) {
     return { lead: await getLead(db, probable.id), duplicate: true as const, similar: dups };
   }
@@ -276,7 +257,6 @@ export async function markSent(
  * there is no draft), so it counts in "messages sent" and its follow-ups get scheduled.
  */
 export async function markContacted(db: Db, leadId: string, opts: { sentAt?: string } = {}) {
-  const lead = await getLead(db, leadId);
   const { data: rows, error } = await db
     .from("outreach")
     .select("id, channel, status, created_at")
@@ -287,7 +267,7 @@ export async function markContacted(db: Db, leadId: string, opts: { sentAt?: str
   if (outreach.some((o) => o.status === "sent")) {
     return { lead: await updateLead(db, leadId, { status: "contacted" }), marked: null };
   }
-  const preferred = lead.kind === "freelance" ? "whatsapp" : "instagram_dm";
+  const preferred = "whatsapp";
   const drafts = outreach.filter((o) => o.status === "draft");
   const draft =
     drafts.find((o) => o.channel === preferred) ??
@@ -343,68 +323,26 @@ export async function updateFollowUp(
 }
 
 export type FollowUpWithLead = FollowUp & {
-  lead: Pick<Lead, "id" | "kind" | "name" | "status" | "instagram_handle" | "phone_e164">;
+  lead: Pick<Lead, "id" | "name" | "status" | "instagram_handle" | "phone_e164">;
 };
 
 export async function listFollowUps(
   db: Db,
-  opts: { range?: "overdue" | "today" | "upcoming" | "all"; kind?: LeadKind; limit?: number } = {},
+  opts: { range?: "overdue" | "today" | "upcoming" | "all"; limit?: number } = {},
 ) {
   // Day boundaries in the user's timezone (the server may run in UTC).
   const startOfToday = startOfDayInTz();
   const endOfToday = new Date(startOfDayInTz(ymd(new Date(startOfToday.getTime() + 36 * 3_600_000))).getTime() - 1);
   let q = db
     .from("follow_ups")
-    .select("*, lead:leads!inner(id, kind, name, status, instagram_handle, phone_e164)")
+    .select("*, lead:leads!inner(id, name, status, instagram_handle, phone_e164)")
     .eq("status", "pending")
     .order("due_at");
-  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.range === "overdue") q = q.lt("due_at", startOfToday.toISOString());
   if (opts.range === "today")
     q = q.gte("due_at", startOfToday.toISOString()).lte("due_at", endOfToday.toISOString());
   if (opts.range === "upcoming") q = q.gt("due_at", endOfToday.toISOString());
   return check(await q.limit(opts.limit ?? 500)) as FollowUpWithLead[];
-}
-
-// ---------------------------------------------------------------------------
-// Deals & payments
-// ---------------------------------------------------------------------------
-export type DealWithPayments = Deal & { payments: Payment[] };
-
-export async function listDeals(db: Db, opts: { status?: Deal["status"] } = {}) {
-  let q = db.from("deals").select("*, payments(*)").order("created_at", { ascending: false });
-  if (opts.status) q = q.eq("status", opts.status);
-  return check(await q) as DealWithPayments[];
-}
-
-export async function createDeal(db: Db, input: unknown) {
-  const data = parse(dealSchema, input);
-  if (!data.lead_id && !data.client_name) throw new RepoError("Pick a lead or enter a client name", "invalid");
-  return check(await db.from("deals").insert({ ...data, client_name: data.client_name ?? "" }).select("*").single()) as Deal;
-}
-
-export async function updateDeal(db: Db, id: string, input: unknown) {
-  const data = parse(dealSchema.partial(), input);
-  const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
-  return check(await db.from("deals").update(clean).eq("id", id).select("*").single()) as Deal;
-}
-
-export async function deleteDeal(db: Db, id: string) {
-  check(await db.from("deals").delete().eq("id", id));
-}
-
-export async function recordPayment(db: Db, dealId: string, input: unknown) {
-  const data = parse(paymentSchema, input);
-  return check(await db.from("payments").insert({ ...data, deal_id: dealId }).select("*").single()) as Payment;
-}
-
-export async function updatePayment(db: Db, id: string, input: unknown) {
-  const data = parse(paymentSchema, input);
-  return check(await db.from("payments").update(data).eq("id", id).select("*").single()) as Payment;
-}
-
-export async function deletePayment(db: Db, id: string) {
-  check(await db.from("payments").delete().eq("id", id));
 }
 
 // ---------------------------------------------------------------------------
@@ -414,20 +352,13 @@ export async function dashboardStats(db: Db) {
   return check(await db.rpc("dashboard_stats")) as DashboardStats;
 }
 
-export async function pipelineFunnel(db: Db, from?: string, to?: string, kind?: LeadKind) {
+export async function pipelineFunnel(db: Db, from?: string, to?: string) {
   return check(
     await db.rpc("pipeline_funnel", {
       p_from: from ?? "-infinity",
       p_to: to ?? "infinity",
-      p_kind: kind ?? null,
     }),
   ) as Funnel;
-}
-
-export async function revenueSummary(db: Db, from?: string, to?: string) {
-  return check(
-    await db.rpc("revenue_summary", { p_from: from ?? "0001-01-01", p_to: to ?? "9999-12-31" }),
-  ) as RevenueSummary;
 }
 
 export async function searchAll(db: Db, query: string, limit = 20) {
@@ -442,51 +373,46 @@ export async function searchAll(db: Db, query: string, limit = 20) {
 
 export async function listActivities(
   db: Db,
-  opts: { leadId?: string; type?: string; actor?: string; kind?: LeadKind; limit?: number; before?: string } = {},
+  opts: { leadId?: string; type?: string; actor?: string; limit?: number; before?: string } = {},
 ) {
   let q = db
     .from("activities")
-    .select(opts.kind ? "*, lead:leads!inner(id, name, kind)" : "*, lead:leads(id, name, kind)")
+    .select("*, lead:leads(id, name)")
     .order("created_at", { ascending: false });
   if (opts.leadId) q = q.eq("lead_id", opts.leadId);
-  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.type) q = q.like("type", `${opts.type}%`);
   if (opts.actor) q = q.eq("actor", opts.actor);
   if (opts.before) q = q.lt("created_at", opts.before);
   return check(await q.limit(opts.limit ?? 100)) as unknown as (Activity & {
-    lead: Pick<Lead, "id" | "name" | "kind"> | null;
+    lead: Pick<Lead, "id" | "name"> | null;
   })[];
 }
 
-/** Rank open leads: fit score, pipeline momentum, and freshness. */
 /**
- * Messages you marked as sent (oldest first), optionally for one pipeline and/or a
- * time window. Used for "messages sent per day" and each lead's contact dates.
+ * Messages you marked as sent (newest first), optionally within a time window. Used for "messages sent per day" and each lead's contact dates.
  */
 export async function listSentMessages(
   db: Db,
-  opts: { kind?: LeadKind; from?: string; to?: string; limit?: number } = {},
+  opts: { from?: string; to?: string; limit?: number } = {},
 ): Promise<SentMessage[]> {
   let q = db
     .from("outreach")
-    .select("lead_id, sent_at, channel, lead:leads!inner(kind)")
+    .select("lead_id, sent_at, channel")
     .eq("status", "sent")
     .order("sent_at", { ascending: false });
-  if (opts.kind) q = q.eq("lead.kind", opts.kind);
   if (opts.from) q = q.gte("sent_at", opts.from);
   if (opts.to) q = q.lt("sent_at", opts.to);
   const rows = check(await q.limit(opts.limit ?? 5000)) as unknown as {
     lead_id: string;
     sent_at: string;
     channel: SentMessage["channel"];
-    lead: { kind: LeadKind };
   }[];
-  return rows.map((r) => ({ lead_id: r.lead_id, sent_at: r.sent_at, channel: r.channel, kind: r.lead.kind }));
+  return rows;
 }
 
-export async function topOpportunities(db: Db, limit = 10, kind?: LeadKind) {
+/** Rank open leads: fit score, pipeline momentum, and freshness. */
+export async function topOpportunities(db: Db, limit = 10) {
   const leads = await listLeads(db, {
-    kind,
     status: ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"],
     limit: 500,
   });

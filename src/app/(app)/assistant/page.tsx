@@ -7,23 +7,20 @@ import { getSettings } from "@/lib/domain/repo";
 import { requireUser } from "@/lib/supabase/server";
 
 const PROMPTS: [string, string][] = [
-  ["Brand discovery", "Read my creator profile, then find 10 new brands in AI, developer tools, coding education or startups that would be a good fit for my Instagram. Research each one properly and add the qualified ones to my CRM with their Instagram handle, any public contacts, and separate Instagram DM and email drafts."],
-  ["Add a brand", "Add boAt (@boat.nirvana) to my brand deals — research them first and draft a DM."],
-  ["Freelance discovery", "Read my creator profile, then find 10 businesses in my city that need a better website or online presence. Only add ones with a public phone number to my freelancing pipeline, with separate WhatsApp and email drafts."],
+  ["Client discovery", "Read my profile, then find 10 businesses in my city that need a better website or online presence. Research each one properly and add the qualified ones with a public phone number to my CRM, with separate WhatsApp and email drafts."],
+  ["Add a client", "Add Sharma Dental Clinic to my CRM: research them first, find their public phone number, and draft a WhatsApp message."],
   ["Log WhatsApp", "I just sent the WhatsApp message to Sharma Dental. Record it."],
-  ["Update status", "Update Notion's status to Interested."],
-  ["Log outreach", "I just sent the Instagram DM to Notion. Record it."],
-  ["Log a reply", "Vercel replied to my email — they want rates for a reel. Record the reply."],
-  ["Revenue", "Record ₹15,000 revenue from my brand collaboration with Notion, received today."],
-  ["Follow-ups", "Show all follow-ups due today, brand deals and freelancing separately."],
-  ["Prioritise", "What are my most promising brand deals right now, and what should I do next for each?"],
+  ["Update status", "Update Sharma Dental's status to Interested."],
+  ["Log a reply", "Sharma Dental replied on WhatsApp: they want a quote for a new website. Record the reply."],
+  ["Follow-ups", "Show all follow-ups due today."],
+  ["Prioritise", "What are my most promising leads right now, and what should I do next for each?"],
 ];
 
 const TOOLS = [
   "get_creator_profile", "update_creator_profile", "dashboard_stats", "check_duplicate", "create_lead", "update_lead",
   "update_lead_status", "search_leads", "get_lead", "add_contact", "save_outreach_draft", "update_outreach_draft",
-  "mark_outreach_sent", "record_interaction", "list_follow_ups", "set_follow_up", "complete_follow_up", "create_deal",
-  "update_deal", "record_payment", "list_deals", "revenue_summary", "top_opportunities", "pipeline_report", "recent_activity",
+  "mark_outreach_sent", "record_interaction", "list_follow_ups", "set_follow_up", "complete_follow_up",
+  "top_opportunities", "pipeline_report", "recent_activity",
 ];
 
 export default async function AssistantPage() {
@@ -41,7 +38,7 @@ export default async function AssistantPage() {
 
       {profileEmpty ? (
         <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-          Fill in your <a href="/settings" className="font-medium underline">creator profile</a> first, so Claude can match brands to your niche and audience.
+          Fill in your <a href="/settings" className="font-medium underline">creator profile</a> first, so Claude can match clients to your services.
         </div>
       ) : null}
 
@@ -82,12 +79,12 @@ export default async function AssistantPage() {
           <CardHeader title={<span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" /> Ground rules</span>} />
           <ul className="flex flex-col gap-2.5 p-4 text-sm">
             {[
-              [true, "Researches brands on the web"],
-              [true, "Saves brands with their Instagram handle, research and fit scores (never invents contact details)"],
-              [true, "Writes separate DM and email drafts for you to edit"],
-              [true, "Updates statuses, follow-ups, deals and revenue when you ask"],
+              [true, "Researches businesses on the web"],
+              [true, "Saves clients with their phone number, research and fit scores (never invents contact details)"],
+              [true, "Writes separate WhatsApp and email drafts for you to edit"],
+              [true, "Updates statuses and follow-ups when you ask"],
               [true, "Prevents duplicate leads and duplicate outreach"],
-              [false, "Never sends DMs or emails"],
+              [false, "Never sends WhatsApp messages or emails"],
               [false, "Cannot delete records — only you can, from this site"],
               [false, "Cannot see anything outside your account"],
             ].map(([okay, t]) => (

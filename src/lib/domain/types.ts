@@ -1,4 +1,3 @@
-export type LeadKind = "brand" | "freelance";
 export type LeadStatus =
   | "new"
   | "researched"
@@ -11,16 +10,14 @@ export type LeadStatus =
   | "lost"
   | "do_not_contact";
 export type LeadSource = "claude" | "manual";
-export type OutreachChannel = "instagram_dm" | "whatsapp" | "email" | "linkedin" | "other";
+export type OutreachChannel = "whatsapp" | "email";
 export type OutreachStatus = "draft" | "sent";
 export type InteractionType = "reply" | "note" | "call" | "meeting" | "negotiation" | "decline";
 export type FollowUpStatus = "pending" | "done" | "cancelled";
-export type DealStatus = "active" | "won" | "lost";
 export type Actor = "me" | "claude" | "system";
 
 export interface Lead {
   id: string;
-  kind: LeadKind;
   name: string;
   website: string | null;
   domain_normalized: string | null;
@@ -94,34 +91,9 @@ export interface FollowUp {
   created_at: string;
 }
 
-export interface Deal {
-  id: string;
-  lead_id: string | null;
-  client_name: string;
-  title: string;
-  amount: number;
-  status: DealStatus;
-  details: string | null;
-  expected_date: string | null;
-  payment_due_date: string | null;
-  closed_at: string | null;
-  created_at: string;
-}
-
-export interface Payment {
-  id: string;
-  deal_id: string;
-  amount: number;
-  paid_on: string;
-  method: string | null;
-  note: string | null;
-  created_at: string;
-}
-
 export interface Activity {
   id: string;
   lead_id: string | null;
-  deal_id: string | null;
   type: string;
   summary: string;
   metadata: Record<string, unknown>;
@@ -147,13 +119,9 @@ export interface CreatorProfile {
 export interface Settings {
   owner_id: string;
   creator_profile: CreatorProfile;
-  default_follow_up_days: number;
-  follow_up_gap_days: number;
-  max_follow_ups: number;
   freelance_first_follow_up_days: number;
   freelance_follow_up_gap_days: number;
   freelance_max_follow_ups: number;
-  currency: string;
 }
 
 export interface FollowUpRules {
@@ -162,19 +130,12 @@ export interface FollowUpRules {
   max: number;
 }
 
-/** The follow-up rules saved in Settings for one pipeline (brand deals by default). */
-export function followUpRules(s: Partial<Settings> | null | undefined, kind: LeadKind = "brand"): FollowUpRules {
-  if (kind === "freelance") {
-    return {
-      first: s?.freelance_first_follow_up_days ?? 3,
-      gap: s?.freelance_follow_up_gap_days ?? 4,
-      max: s?.freelance_max_follow_ups ?? 2,
-    };
-  }
+/** The follow-up rules saved in Settings. */
+export function followUpRules(s: Partial<Settings> | null | undefined): FollowUpRules {
   return {
-    first: s?.default_follow_up_days ?? 3,
-    gap: s?.follow_up_gap_days ?? 4,
-    max: s?.max_follow_ups ?? 2,
+    first: s?.freelance_first_follow_up_days ?? 3,
+    gap: s?.freelance_follow_up_gap_days ?? 4,
+    max: s?.freelance_max_follow_ups ?? 2,
   };
 }
 
@@ -186,8 +147,7 @@ export function describeRules(r: FollowUpRules) {
 }
 
 export interface DashboardStats {
-  total_brands: number;
-  total_freelance: number;
+  total_leads: number;
   new_leads_7d: number;
   messages_sent: number;
   replies_received: number;
@@ -197,9 +157,6 @@ export interface DashboardStats {
   negotiating: number;
   won: number;
   lost: number;
-  revenue_received: number;
-  pending_payments: number;
-  expected_revenue: number;
 }
 
 export interface Funnel {
@@ -213,13 +170,4 @@ export interface Funnel {
   lost: number;
   reply_rate: number;
   conversion_rate: number;
-}
-
-export interface RevenueSummary {
-  total_received: number;
-  pending_payments: number;
-  expected_from_active: number;
-  won_deal_value: number;
-  monthly: { month: string; total: number }[];
-  by_client: { client: string; lead_id: string | null; received: number }[];
 }

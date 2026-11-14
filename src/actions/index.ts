@@ -9,9 +9,7 @@ import {
   firstError,
   followUpRulesSchema,
   formToObject,
-  freelanceFollowUpRulesSchema,
 } from "@/lib/domain/schemas";
-import { KIND_PATH } from "@/lib/domain/constants";
 import type { LeadStatus } from "@/lib/domain/types";
 import { createClient, requireUser } from "@/lib/supabase/server";
 import { fail, ok, type ActionResult } from "./result";
@@ -82,10 +80,9 @@ export async function setLeadStatusAction(id: string, status: LeadStatus): Promi
 export async function deleteLeadAction(id: string): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser();
-    const lead = await repo.getLead(supabase, id);
     await repo.deleteLead(supabase, id);
     refresh();
-    return ok("Lead deleted", { redirect: KIND_PATH[lead.kind] });
+    return ok("Lead deleted", { redirect: "/freelance" });
   } catch (e) {
     return fail(e);
   }
@@ -163,7 +160,7 @@ export async function deleteDraftAction(id: string): Promise<ActionResult> {
   }
 }
 
-/** Records that Aditya sent this message himself. The app never sends anything. */
+/** Records that the user sent this message themselves. The app never sends anything. */
 export async function markSentAction(id: string, _: ActionResult | null, fd: FormData): Promise<ActionResult> {
   try {
     const { supabase } = await requireUser();
@@ -264,95 +261,6 @@ export async function snoozeFollowUpAction(id: string, days: number): Promise<Ac
 }
 
 // ---------------------------------------------------------------------------
-// Deals & payments
-// ---------------------------------------------------------------------------
-export async function createDealAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    const raw = formToObject(fd);
-    const deal = await repo.createDeal(supabase, { ...raw, lead_id: raw.lead_id || null });
-    const received = Number(raw.received_now ?? 0);
-    if (received > 0) {
-      await repo.recordPayment(supabase, deal.id, {
-        amount: received,
-        paid_on: (raw.paid_on as string) || new Date().toISOString().slice(0, 10),
-      });
-    }
-    refresh();
-    return ok("Deal saved");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function updateDealAction(id: string, _: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    const raw = formToObject(fd);
-    await repo.updateDeal(supabase, id, { ...raw, lead_id: raw.lead_id || null });
-    refresh();
-    return ok("Deal updated");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function setDealStatusAction(id: string, status: "active" | "won" | "lost"): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.updateDeal(supabase, id, { status });
-    refresh();
-    return ok(`Deal marked ${status}`);
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function deleteDealAction(id: string): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.deleteDeal(supabase, id);
-    refresh();
-    return ok("Deal deleted");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function recordPaymentAction(dealId: string, _: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.recordPayment(supabase, dealId, formToObject(fd));
-    refresh();
-    return ok("Payment recorded");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function updatePaymentAction(id: string, _: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.updatePayment(supabase, id, formToObject(fd));
-    refresh();
-    return ok("Payment updated");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function deletePaymentAction(id: string): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    await repo.deletePayment(supabase, id);
-    refresh();
-    return ok("Payment removed");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 export async function saveCreatorProfileAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
@@ -376,19 +284,6 @@ export async function saveFollowUpRulesAction(_: ActionResult | null, fd: FormDa
     await repo.updateSettings(supabase, parsed.data);
     refresh();
     return ok("Follow-up rules saved");
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function saveFreelanceFollowUpRulesAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
-  try {
-    const { supabase } = await requireUser();
-    const parsed = freelanceFollowUpRulesSchema.safeParse(formToObject(fd));
-    if (!parsed.success) return { ok: false, error: firstError(parsed.error) };
-    await repo.updateSettings(supabase, parsed.data);
-    refresh();
-    return ok("Freelance follow-up rules saved");
   } catch (e) {
     return fail(e);
   }

@@ -17,7 +17,7 @@ import { FitScore, StatusBadge } from "@/components/ui/badge";
 import { LEAD_STATUSES, STATUS_LABEL, STATUS_TONE } from "@/lib/domain/constants";
 import { dayLabel, type LeadMessages } from "@/lib/domain/messages";
 import { formatPhone } from "@/lib/domain/phone";
-import type { Lead, LeadKind, LeadStatus } from "@/lib/domain/types";
+import type { Lead, LeadStatus } from "@/lib/domain/types";
 import { cn, fmtDate, fmtDateTime, instagramUrl, whatsappUrl, ymd } from "@/lib/utils";
 
 /** A lead plus how many messages you've sent it and when. */
@@ -89,7 +89,7 @@ const phoneColumn = col.accessor("phone_e164", {
   sortUndefined: "last",
 });
 
-const brandColumns = [
+const columns = [
   col.accessor("name", {
     header: "Name",
     cell: (c) => (
@@ -105,6 +105,7 @@ const brandColumns = [
       </div>
     ),
   }),
+  phoneColumn,
   instagramColumn,
   col.accessor("industry", { header: "Industry", cell: (c) => <span className="text-muted">{c.getValue() ?? "—"}</span> }),
   col.accessor("status", {
@@ -159,12 +160,8 @@ function MessagesCell({ m }: { m: LeadMessages | null }) {
   );
 }
 
-// Freelance: phone (WhatsApp) right after the name, then Instagram.
-const freelanceColumns = [brandColumns[0], phoneColumn, ...brandColumns.slice(1)];
-
 interface Props {
   leads: LeadRow[];
-  kind?: LeadKind;
   /** Group rows under a heading per day added (rows must already be newest first). */
   groupByDate?: boolean;
   /** Messages sent per day (YYYY-MM-DD → count), shown in each day heading. */
@@ -199,10 +196,9 @@ function DayHeading({ day, added, sent, noun }: { day: string; added: number; se
   );
 }
 
-export function LeadsTable({ leads, kind = "brand", groupByDate = false, sentPerDay = {} }: Props) {
+export function LeadsTable({ leads, groupByDate = false, sentPerDay = {} }: Props) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const columns = kind === "freelance" ? freelanceColumns : brandColumns;
-  const noun = kind === "freelance" ? "client" : "brand";
+  const noun = "client";
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: leads,
@@ -290,7 +286,7 @@ export function LeadsTable({ leads, kind = "brand", groupByDate = false, sentPer
                     <StatusBadge status={l.status} />
                   </div>
                   <p className="line-clamp-1 text-xs text-muted">{l.suggested_service ?? l.industry ?? l.domain_normalized ?? "—"}</p>
-                  {kind === "freelance" && l.phone_e164 ? <p className="text-xs text-muted">{formatPhone(l.phone_e164)}</p> : null}
+                  {l.phone_e164 ? <p className="text-xs text-muted">{formatPhone(l.phone_e164)}</p> : null}
                   {l.instagram_handle_normalized ? <p className="text-xs text-muted">@{l.instagram_handle_normalized}</p> : null}
                   <div className="flex items-center justify-between gap-2">
                     <FitScore score={l.fit_score} />

@@ -4,8 +4,11 @@ import { createDb, as, asSystem, USER_A, USER_B } from "./harness";
 
 let db: PGlite;
 
+let phoneSeq = 1;
+const nextPhone = () => `+91990000${String(phoneSeq++).padStart(4, "0")}`;
+
 async function newLead(user = USER_A, fields: Record<string, unknown> = {}, claude = false) {
-  const f = { name: "Acme AI", website: "https://www.acme.ai/about", ...fields };
+  const f = { name: "Acme AI", website: "https://www.acme.ai/about", phone_e164: nextPhone(), phone_country: "IN", ...fields };
   const cols = Object.keys(f);
   const rows = await as<{ id: string }>(
     db,
@@ -27,7 +30,7 @@ async function followUps(leadId: string) {
     db, "select * from follow_ups where lead_id = $1 order by created_at", [leadId]);
 }
 
-async function draft(leadId: string, channel = "instagram_dm") {
+async function draft(leadId: string, channel = "whatsapp") {
   const rows = await as<{ id: string }>(db, USER_A,
     "insert into outreach (lead_id, channel, body) values ($1, $2, 'Hi!') returning id", [leadId, channel]);
   return rows[0].id;
@@ -39,8 +42,8 @@ beforeAll(async () => {
 
 describe("settings", () => {
   it("creates a settings row for each new user", async () => {
-    const rows = await as(db, USER_A, "select default_follow_up_days from settings");
-    expect(rows).toEqual([{ default_follow_up_days: 3 }]);
+    const rows = await as(db, USER_A, "select freelance_first_follow_up_days from settings");
+    expect(rows).toEqual([{ freelance_first_follow_up_days: 3 }]);
   });
 });
 
@@ -86,6 +89,13 @@ describe("duplicates", () => {
     ).rejects.toThrow(/leads_unique_handle/);
   });
 
+  it("rejects the same phone number", async () => {
+    await newLead(USER_A, { name: "Phone One", website: null, phone_e164: "+919900099999" });
+    await expect(newLead(USER_A, { name: "Phone Two", website: null, phone_e164: "+919900099999" })).rejects.toThrow(
+      /leads_unique_phone/,
+    );
+  });
+
   it("check_duplicate finds exact and fuzzy matches", async () => {
     await newLead(USER_A, { name: "Vercel Labs", website: "vercel-labs.com" });
     const exact = await as<{ match_type: string }>(db, USER_A,
@@ -93,6 +103,10 @@ describe("duplicates", () => {
     expect(exact[0].match_type).toBe("website");
     const fuzzy = await as<{ name: string }>(db, USER_A, "select * from check_duplicate(p_name => 'Vercel Lab')");
     expect(fuzzy.map((r) => r.name)).toContain("Vercel Labs");
+    await newLead(USER_A, { name: "Dial Dental", website: null, phone_e164: "+919822222222" });
+    const byPhone = await as<{ name: string; match_type: string }>(db, USER_A,
+      "select name, match_type from check_duplicate(p_phone => '+919822222222')");
+    expect(byPhone[0]).toMatchObject({ name: "Dial Dental", match_type: "phone" });
   });
 });
 
@@ -207,29 +221,20 @@ describe("activity log", () => {
   });
 });
 
-describe("revenue", () => {
-  it("computes received, pending and expected; winning a deal wins the lead", async () => {
-    const id = await newLead(USER_A, { name: "Payer", website: "payer.com" });
-    const [{ id: won }] = await as<{ id: string }>(db, USER_A,
-      "insert into deals (lead_id, title, amount) values ($1, 'Reel collab', 15000) returning id", [id]);
-    expect((await lead(id)).status).toBe("negotiating");
-    await as(db, USER_A, "update deals set status = 'won' where id = $1", [won]);
-    expect((await lead(id)).status).toBe("won");
-    await as(db, USER_A, "insert into payments (deal_id, amount) values ($1, 10000)", [won]);
-    await as(db, USER_A,
-      "insert into deals (client_name, title, amount) values ('Brand X', 'Story set', 40000)");
-
-    const [{ revenue_summary: r }] = await as<{ revenue_summary: Record<string, unknown> }>(
-      db, USER_A, "select revenue_summary()");
-    expect(Number(r.total_received)).toBe(10000);
-    expect(Number(r.pending_payments)).toBe(5000);
-    expect(Number(r.expected_from_active)).toBe(40000);
-    expect(r.by_client).toEqual([expect.objectContaining({ client: "Payer" })]);
+describe("lead outcomes", () => {
+  it("winning a lead is logged and counted on the dashboard and in the funnel", async () => {
+    const id = await newLead(USER_A, { name: "Winner", website: "winner.com" });
+    await as(db, USER_A, "select mark_outreach_sent($1)", [await draft(id)]);
+    await as(db, USER_A, "update leads set status = 'won' where id = $1", [id]);
+    expect((await followUps(id))[0].status).toBe("cancelled");
+    const acts = await as<{ type: string }>(db, USER_A, "select type from activities where lead_id = $1", [id]);
+    expect(acts.map((a) => a.type)).toContain("lead_won");
 
     const [{ dashboard_stats: d }] = await as<{ dashboard_stats: Record<string, unknown> }>(
       db, USER_A, "select dashboard_stats()");
-    expect(Number(d.revenue_received)).toBe(10000);
-    expect(Number(d.pending_payments)).toBe(5000);
+    expect(Number(d.won)).toBeGreaterThanOrEqual(1);
+    expect(Number(d.total_leads)).toBeGreaterThan(1);
+    expect(Object.keys(d).some((k) => /revenue|payment|brand/.test(k))).toBe(false);
   });
 });
 

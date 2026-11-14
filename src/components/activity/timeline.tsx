@@ -1,13 +1,11 @@
 import {
   Bot,
-  BriefcaseBusiness,
   CalendarCheck,
   CalendarClock,
   CalendarX,
   CircleCheck,
   CircleX,
   FileText,
-  IndianRupee,
   Mail,
   MessageCircle,
   Pencil,
@@ -17,10 +15,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { InstagramIcon } from "@/components/icons";
 import { ACTIVITY_LABEL } from "@/lib/domain/constants";
 import type { Activity, Lead } from "@/lib/domain/types";
-import { cn, fmtDateTime, relative, prettySummary } from "@/lib/utils";
+import { cn, fmtDateTime, relative } from "@/lib/utils";
 
 const ICONS: Record<string, [LucideIcon, string]> = {
   lead_created: [Plus, "text-accent bg-accent-soft"],
@@ -37,14 +34,11 @@ const ICONS: Record<string, [LucideIcon, string]> = {
   follow_up_completed: [CalendarCheck, "text-success bg-success/10"],
   follow_up_cancelled: [CalendarX, "text-muted bg-surface-2"],
   follow_up_rescheduled: [CalendarClock, "text-muted bg-surface-2"],
-  deal_created: [IndianRupee, "text-amber-600 bg-amber-500/10 dark:text-amber-400"],
-  deal_won: [CircleCheck, "text-success bg-success/10"],
-  deal_lost: [CircleX, "text-danger bg-danger/10"],
-  revenue_updated: [IndianRupee, "text-muted bg-surface-2"],
-  payment_received: [IndianRupee, "text-success bg-success/10"],
+  lead_won: [CircleCheck, "text-success bg-success/10"],
+  lead_lost: [CircleX, "text-danger bg-danger/10"],
 };
 
-export type ActivityRow = Activity & { lead?: (Pick<Lead, "id" | "name"> & { kind?: Lead["kind"] }) | null };
+export type ActivityRow = Activity & { lead?: Pick<Lead, "id" | "name"> | null };
 
 export function Timeline({ items, showLead = false }: { items: ActivityRow[]; showLead?: boolean }) {
   if (items.length === 0) return <p className="px-4 py-8 text-center text-xs text-muted">No activity yet.</p>;
@@ -62,7 +56,7 @@ export function Timeline({ items, showLead = false }: { items: ActivityRow[]; sh
               {i < items.length - 1 ? <span className="absolute top-7 h-[calc(100%+0.25rem)] w-px bg-border" /> : null}
             </div>
             <div className="min-w-0 flex-1 pb-1">
-              <p className="text-sm">{prettySummary(a.summary)}</p>
+              <p className="text-sm">{a.summary}</p>
               {excerpt ? <p className="mt-1 line-clamp-2 text-xs text-muted">“{excerpt}”</p> : null}
               <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
                 <span title={fmtDateTime(a.created_at)}>{relative(a.created_at)}</span>
@@ -75,15 +69,7 @@ export function Timeline({ items, showLead = false }: { items: ActivityRow[]; sh
                   <span>· automatic</span>
                 ) : null}
                 {showLead && a.lead ? (
-                  <span className="inline-flex items-center gap-1 font-medium text-fg/80">
-                    ·
-                    {a.lead.kind === "freelance" ? (
-                      <BriefcaseBusiness className="size-3" />
-                    ) : a.lead.kind === "brand" ? (
-                      <InstagramIcon className="size-3" />
-                    ) : null}
-                    {a.lead.name}
-                  </span>
+                  <span className="font-medium text-fg/80">· {a.lead.name}</span>
                 ) : null}
               </p>
             </div>

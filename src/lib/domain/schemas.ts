@@ -2,7 +2,7 @@
  * Validation schemas shared by the web app (server actions) and the MCP server.
  */
 import { z } from "zod";
-import { CHANNELS, DEAL_STATUSES, INTERACTION_TYPES, LEAD_STATUSES } from "./constants";
+import { CHANNELS, INTERACTION_TYPES, LEAD_STATUSES } from "./constants";
 import { validatePhone } from "./phone";
 
 /** Optional text: trims, and turns "" into null. */
@@ -37,17 +37,6 @@ const optInt = (min: number, max: number) =>
       return n;
     });
 
-const money = z
-  .union([z.number(), z.string()])
-  .transform((v, ctx) => {
-    const n = typeof v === "number" ? v : Number(String(v).replace(/[₹,\s]/g, ""));
-    if (!Number.isFinite(n) || n < 0) {
-      ctx.addIssue({ code: "custom", message: "Enter a valid amount" });
-      return z.NEVER;
-    }
-    return Math.round(n * 100) / 100;
-  });
-
 const tags = z
   .union([z.array(z.string()), z.string()])
   .nullish()
@@ -58,18 +47,6 @@ const tags = z
       .slice(0, 20),
   );
 
-const isoDate = z
-  .string()
-  .trim()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
-const optDate = z
-  .string()
-  .trim()
-  .nullish()
-  .transform((v) => (v ? v : null))
-  .refine((v) => v === null || /^\d{4}-\d{2}-\d{2}$/.test(v), "Use YYYY-MM-DD");
-
-export const leadKind = z.enum(["brand", "freelance"]);
 export const leadStatus = z.enum(LEAD_STATUSES as [string, ...string[]]);
 export const channel = z.enum(CHANNELS as [string, ...string[]]);
 
@@ -100,33 +77,22 @@ const phoneFields = {
 
 export const leadFields = { ...leadDetailFields, ...phoneFields };
 
-export const NEEDS_BRAND_PROFILE = "Add the brand's Instagram handle or website";
-export const NEEDS_FREELANCE_PHONE = "Freelance clients need a phone number (you reach them on WhatsApp)";
+export const NEEDS_PHONE = "Clients need a phone number (you reach them on WhatsApp)";
 
 /**
- * New leads.
- *  - Instagram brand deal (default): name and the brand's Instagram handle or website. No phone
- *    number is needed (brand deals happen over DM / email); one that is given is still validated.
- *  - Freelance client: business name and a valid phone number with country code (WhatsApp).
- *    Instagram handle, website and email are optional.
+ * New leads (freelance clients): a business name and a valid phone number with country code
+ * (WhatsApp). Instagram handle, website and email are optional.
  */
 export const leadCreateSchema = z
   .object({
-    kind: leadKind.default("brand"),
     ...leadFields,
     status: leadStatus.optional(),
     source: z.enum(["claude", "manual"]).optional(),
   })
   .transform((d, ctx) => {
     const { phone_number, phone_country, ...rest } = d;
-    if (d.kind === "brand") {
-      if (!d.instagram_handle && !d.website) {
-        ctx.addIssue({ code: "custom", path: ["instagram_handle"], message: NEEDS_BRAND_PROFILE });
-        return z.NEVER;
-      }
-      if (!phone_number) return { ...rest, phone_e164: null as string | null, phone_country: null as string | null };
-    } else if (!phone_number) {
-      ctx.addIssue({ code: "custom", path: ["phone_number"], message: NEEDS_FREELANCE_PHONE });
+    if (!phone_number) {
+      ctx.addIssue({ code: "custom", path: ["phone_number"], message: NEEDS_PHONE });
       return z.NEVER;
     }
     const phone = validatePhone(phone_number, phone_country);
@@ -194,24 +160,6 @@ export const followUpSchema = z.object({
   reason: optText(500),
 });
 
-export const dealSchema = z.object({
-  lead_id: z.uuid().nullish(),
-  client_name: optText(200),
-  title: z.string().trim().min(1, "Title is required").max(300),
-  amount: money,
-  status: z.enum(DEAL_STATUSES as [string, ...string[]]).default("active"),
-  details: optText(5000),
-  expected_date: optDate,
-  payment_due_date: optDate,
-});
-
-export const paymentSchema = z.object({
-  amount: money.refine((n) => n > 0, "Amount must be greater than 0"),
-  paid_on: isoDate,
-  method: optText(100),
-  note: optText(1000),
-});
-
 export const creatorProfileSchema = z.object({
   instagram_handle: optText(100),
   niche: optText(500),
@@ -231,15 +179,8 @@ export const creatorProfileSchema = z.object({
   bio: optText(5000),
 });
 
-/** Follow-up timing for brand outreach. */
+/** Follow-up timing for outreach (WhatsApp / email). */
 export const followUpRulesSchema = z.object({
-  default_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
-  follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
-  max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),
-});
-
-/** Follow-up timing for freelance outreach (WhatsApp / email). */
-export const freelanceFollowUpRulesSchema = z.object({
   freelance_first_follow_up_days: optInt(0, 90).transform((v) => v ?? 3),
   freelance_follow_up_gap_days: optInt(1, 90).transform((v) => v ?? 4),
   freelance_max_follow_ups: optInt(0, 20).transform((v) => v ?? 2),

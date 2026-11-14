@@ -23,9 +23,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { ActionButton, CopyButton } from "@/components/ui/misc";
 import { EmptyState } from "@/components/ui/page-header";
-import { CHANNELS, CHANNELS_FOR, CHANNEL_LABEL, INTERACTION_LABEL, INTERACTION_TYPES } from "@/lib/domain/constants";
+import { CHANNELS, CHANNEL_LABEL, INTERACTION_LABEL, INTERACTION_TYPES } from "@/lib/domain/constants";
 import { formatPhone } from "@/lib/domain/phone";
-import { describeRules, followUpRules, type Contact, type FollowUp, type Interaction, type Lead, type LeadKind, type Outreach, type Settings } from "@/lib/domain/types";
+import { describeRules, followUpRules, type Contact, type FollowUp, type Interaction, type Lead, type Outreach, type Settings } from "@/lib/domain/types";
 import { buttonClass } from "@/components/ui/button";
 import { cn, dueLabel, externalUrl, fmtDateTime, instagramUrl, relative, whatsappUrl } from "@/lib/utils";
 
@@ -44,7 +44,6 @@ function Block({ title, text }: { title: string; text: string | null }) {
 
 export function Overview({ lead }: { lead: Lead }) {
   const hasAny = lead.description || lead.opportunity || lead.why_fit || lead.suggested_service || lead.research;
-  const freelance = lead.kind === "freelance";
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
@@ -53,9 +52,9 @@ export function Overview({ lead }: { lead: Lead }) {
           {hasAny ? (
             <>
               <Block title="What they do" text={lead.description} />
-              <Block title={freelance ? "What they need" : "Collaboration opportunity"} text={lead.opportunity} />
-              <Block title={freelance ? "Why I'm a good fit" : "Why they'd work with me"} text={lead.why_fit} />
-              <Block title={freelance ? "Service to offer" : "Suggested collaboration"} text={lead.suggested_service} />
+              <Block title="What they need" text={lead.opportunity} />
+              <Block title="Why I'm a good fit" text={lead.why_fit} />
+              <Block title="Service to offer" text={lead.suggested_service} />
               <Block title="Research notes" text={lead.research} />
             </>
           ) : (
@@ -85,16 +84,12 @@ export function Overview({ lead }: { lead: Lead }) {
                 <a href={`tel:${lead.phone_e164}`} className="text-accent hover:underline">
                   {formatPhone(lead.phone_e164)}
                 </a>
-                {freelance ? (
-                  <a href={whatsappUrl(lead.phone_e164)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
-                    <MessageCircle className="size-3" /> WhatsApp
-                  </a>
-                ) : null}
+                <a href={whatsappUrl(lead.phone_e164)!} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                  <MessageCircle className="size-3" /> WhatsApp
+                </a>
               </span>
-            ) : freelance ? (
-              <span className="font-medium text-warning">Missing</span>
             ) : (
-              "—"
+              <span className="font-medium text-warning">Missing</span>
             )}
           </dd>
           <dt className="text-muted">LinkedIn</dt>
@@ -254,8 +249,8 @@ export function Contacts({ lead, contacts }: { lead: Lead; contacts: Contact[] }
 // ---------------------------------------------------------------------------
 // Outreach
 // ---------------------------------------------------------------------------
-function DraftFields({ o, kind }: { o?: Outreach; kind: LeadKind }) {
-  const channels = CHANNELS_FOR[kind];
+function DraftFields({ o }: { o?: Outreach }) {
+  const channels = CHANNELS;
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
@@ -287,14 +282,13 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
   const sent = outreach.filter((o) => o.status === "sent");
   const closed = ["won", "lost", "do_not_contact"].includes(lead.status);
   const sentCount = sent.length;
-  const rules = followUpRules(settings, lead.kind);
+  const rules = followUpRules(settings);
   const defaultDays = sentCount === 0 ? rules.first : rules.gap;
-  const freelance = lead.kind === "freelance";
 
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-accent/30 bg-accent-soft/50 px-4 py-3 text-xs text-fg/80">
-        You send every message yourself. Copy a draft, send it on {freelance ? "WhatsApp" : "Instagram"} or email, then click{" "}
+        You send every message yourself. Copy a draft, send it on WhatsApp or email, then click{" "}
         <span className="font-medium">Mark as sent</span> — a follow-up is scheduled automatically.
       </div>
       <Card>
@@ -304,14 +298,14 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
           action={
             <Dialog trigger={<><Plus /> New draft</>} title="New outreach draft" size="sm" wide>
               <ActionForm action={saveDraftAction.bind(null, lead.id)}>
-                <DraftFields kind={lead.kind} />
+                <DraftFields />
               </ActionForm>
             </Dialog>
           }
         />
         {drafts.length === 0 ? (
           <EmptyState title="No drafts">
-            Ask Claude to prepare a personalised {freelance ? "WhatsApp message" : "DM"} and email for {lead.name}.
+            Ask Claude to prepare a personalised WhatsApp message and email for {lead.name}.
           </EmptyState>
         ) : (
           <ul className="divide-y divide-border">
@@ -337,7 +331,7 @@ export function OutreachSection({ lead, outreach, settings }: { lead: Lead; outr
                     ) : null}
                     <Dialog trigger={<Pencil />} triggerTitle="Edit draft" title="Edit draft" variant="ghost" size="icon-sm" wide>
                       <ActionForm action={updateDraftAction.bind(null, o.id)} reset={false}>
-                        <DraftFields o={o} kind={lead.kind} />
+                        <DraftFields o={o} />
                       </ActionForm>
                     </Dialog>
                     <ActionButton action={deleteDraftAction.bind(null, o.id)} confirm="Delete?" variant="ghost" size="icon-sm" title="Delete draft">
@@ -539,7 +533,7 @@ export function FollowUps({ lead, followUps, settings }: { lead: Lead; followUps
         description={
           closed
             ? "This lead is closed — follow-ups are stopped."
-            : `${lead.kind === "freelance" ? "Freelance" : "Brand"} follow-up rules: ${describeRules(followUpRules(settings, lead.kind))}.`
+            : `Follow-up rules: ${describeRules(followUpRules(settings))}.`
         }
         action={
           !closed ? (
@@ -547,7 +541,7 @@ export function FollowUps({ lead, followUps, settings }: { lead: Lead; followUps
               <ActionForm action={setFollowUpAction.bind(null, lead.id)}>
                 <div className="flex flex-col gap-4">
                   <Field label="Due">
-                    <DateTimeField name="due_at" defaultDaysFromNow={followUpRules(settings, lead.kind).gap} required />
+                    <DateTimeField name="due_at" defaultDaysFromNow={followUpRules(settings).gap} required />
                   </Field>
                   <Field label="Reason">
                     <Input name="reason" placeholder="Check in about proposal" />

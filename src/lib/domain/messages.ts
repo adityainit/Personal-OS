@@ -1,24 +1,21 @@
 /**
- * Groups sent messages by day (in the app timezone) and by lead, so the Brand Deals and
- * Freelancing pages can show "how many messages went out on which date" and
+ * Groups sent messages by day (in the app timezone) and by lead, so the Freelancing
+ * page can show "how many messages went out on which date" and
  * "when did I contact this lead".
  */
 import { ymd } from "@/lib/utils";
-import type { LeadKind, OutreachChannel } from "./types";
+import type { OutreachChannel } from "./types";
 
 export interface SentMessage {
   lead_id: string;
   sent_at: string;
   channel: OutreachChannel;
-  kind: LeadKind;
 }
 
 export interface DayTotal {
   /** YYYY-MM-DD in the app timezone. */
   day: string;
   total: number;
-  brand: number;
-  freelance: number;
   /** Distinct leads messaged that day. */
   leadIds: string[];
 }
@@ -36,11 +33,10 @@ export function messagesByDay(rows: SentMessage[]): DayTotal[] {
     const day = ymd(new Date(r.sent_at));
     let d = days.get(day);
     if (!d) {
-      d = { day, total: 0, brand: 0, freelance: 0, leadIds: [], ids: new Set() };
+      d = { day, total: 0, leadIds: [], ids: new Set() };
       days.set(day, d);
     }
     d.total += 1;
-    d[r.kind] += 1;
     d.ids.add(r.lead_id);
   }
   return [...days.values()]
@@ -70,7 +66,7 @@ export function lastNDays(byDay: DayTotal[], n: number, today = ymd()): DayTotal
   const base = new Date(today + "T12:00:00Z");
   for (let i = 0; i < n; i++) {
     const day = new Date(base.getTime() - i * 86_400_000).toISOString().slice(0, 10);
-    out.push(index.get(day) ?? { day, total: 0, brand: 0, freelance: 0, leadIds: [] });
+    out.push(index.get(day) ?? { day, total: 0, leadIds: [] });
   }
   return out;
 }

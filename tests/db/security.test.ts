@@ -20,12 +20,11 @@ async function insertLead(user: string, fields: Record<string, unknown>) {
   );
 }
 
-describe("phone numbers are optional but validated", () => {
-  it("accepts a brand with no phone (and drops a stray country)", async () => {
-    const [{ id }] = await insertLead(USER_A, { name: "DM Brand", instagram_handle: "@dmbrand", phone_country: "IN" });
-    const [row] = await asSystem<{ phone_e164: string | null; phone_country: string | null }>(
-      db, "select phone_e164, phone_country from leads where id = $1", [id]);
-    expect(row).toEqual({ phone_e164: null, phone_country: null });
+describe("phone numbers are required and validated", () => {
+  it("rejects a lead without a phone number", async () => {
+    await expect(insertLead(USER_A, { name: "No Phone", instagram_handle: "@nophone" })).rejects.toThrow(
+      /need a phone number/,
+    );
   });
 
   it("rejects malformed numbers and missing country", async () => {
@@ -39,17 +38,28 @@ describe("phone numbers are optional but validated", () => {
     ).rejects.toThrow(/phone country/);
   });
 
-  it("accepts a valid E.164 number, and lets it be removed", async () => {
+  it("accepts a valid E.164 number but doesn't let it be removed", async () => {
     const [{ id }] = await insertLead(USER_A, { name: "Has Phone", website: "hasphone.com", ...PHONE });
-    await as(db, USER_A, "update leads set phone_e164 = null where id = $1", [id]);
+    await expect(as(db, USER_A, "update leads set phone_e164 = null where id = $1", [id])).rejects.toThrow(
+      /need a phone number/,
+    );
   });
 });
 
 describe("settings", () => {
-  it("new accounts get brand-friendly follow-up defaults", async () => {
+  it("new accounts get follow-up defaults: first after 3 days, then 4 days later, max 2", async () => {
     const [s] = await as<Record<string, number>>(db, USER_B,
-      "select default_follow_up_days, follow_up_gap_days, max_follow_ups from settings");
-    expect(s).toEqual({ default_follow_up_days: 3, follow_up_gap_days: 4, max_follow_ups: 2 });
+      "select freelance_first_follow_up_days, freelance_follow_up_gap_days, freelance_max_follow_ups from settings");
+    expect(s).toEqual({ freelance_first_follow_up_days: 3, freelance_follow_up_gap_days: 4, freelance_max_follow_ups: 2 });
+  });
+
+  it("has no brand follow-up rules or currency any more", async () => {
+    const cols = await asSystem<{ column_name: string }>(db,
+      "select column_name from information_schema.columns where table_schema = 'public' and table_name = 'settings'");
+    const names = cols.map((c) => c.column_name);
+    for (const gone of ["default_follow_up_days", "follow_up_gap_days", "max_follow_ups", "currency"]) {
+      expect(names).not.toContain(gone);
+    }
   });
 });
 
@@ -82,8 +92,13 @@ describe("function permissions", () => {
 
 describe("follow-up limit", () => {
   async function sendN(n: number, max: number) {
-    await as(db, USER_A, "update settings set max_follow_ups = $1", [max]);
-    const [{ id }] = await insertLead(USER_A, { name: `Limit ${n}-${max}`, website: `limit${n}x${max}.com` });
+    await as(db, USER_A, "update settings set freelance_max_follow_ups = $1", [max]);
+    const [{ id }] = await insertLead(USER_A, {
+      name: `Limit ${n}-${max}`,
+      website: `limit${n}x${max}.com`,
+      phone_e164: `+91981000${n}${max}00`,
+      phone_country: "IN",
+    });
     const out: (unknown | null)[] = [];
     for (let i = 0; i < n; i++) {
       const [{ id: o }] = await as<{ id: string }>(db, USER_A,
@@ -106,43 +121,18 @@ describe("follow-up limit", () => {
 });
 
 describe("deleting records", () => {
-  it("deleting a lead removes its children, keeps its deals and history, and logs it", async () => {
-    const [{ id }] = await insertLead(USER_A, { name: "Doomed", website: "doomed.com" });
+  it("deleting a lead removes its children and logs it", async () => {
+    const [{ id }] = await insertLead(USER_A, { name: "Doomed", website: "doomed.com", phone_e164: "+919812345678", phone_country: "IN" });
     await as(db, USER_A, "insert into contacts (lead_id, email) values ($1,'a@doomed.com')", [id]);
     await as(db, USER_A, "insert into interactions (lead_id, type) values ($1,'note')", [id]);
-    const [{ id: deal }] = await as<{ id: string }>(db, USER_A,
-      "insert into deals (lead_id, title, amount) values ($1,'Collab',1000) returning id", [id]);
-    await as(db, USER_A, "insert into payments (deal_id, amount) values ($1, 400)", [deal]);
+    await as(db, USER_A, "insert into outreach (lead_id, channel, body) values ($1,'email','hi')", [id]);
 
     await as(db, USER_A, "delete from leads where id = $1", [id]);
 
     expect(await asSystem(db, "select 1 from contacts where lead_id = $1", [id])).toHaveLength(0);
-    const [d] = await asSystem<{ lead_id: string | null; client_name: string }>(db, "select lead_id, client_name from deals where id = $1", [deal]);
-    expect(d).toEqual({ lead_id: null, client_name: "Doomed" });
-    expect(Number((await asSystem<{ n: number }>(db, "select count(*) n from payments where deal_id = $1", [deal]))[0].n)).toBe(1);
+    expect(await asSystem(db, "select 1 from interactions where lead_id = $1", [id])).toHaveLength(0);
+    expect(await asSystem(db, "select 1 from outreach where lead_id = $1", [id])).toHaveLength(0);
     const log = await as<{ type: string }>(db, USER_A, "select type from activities where type = 'lead_deleted' and summary like '%Doomed%'");
     expect(log).toHaveLength(1);
-  });
-
-  it("deleting a deal removes its payments and fixes revenue totals", async () => {
-    const [{ id: deal }] = await as<{ id: string }>(db, USER_A,
-      "insert into deals (client_name, title, amount, status) values ('Temp Brand','Reel',5000,'won') returning id");
-    await as(db, USER_A, "insert into payments (deal_id, amount, paid_on) values ($1, 5000, '2026-01-15')", [deal]);
-    const before = await as<{ revenue_summary: { total_received: number } }>(db, USER_A, "select revenue_summary('2026-01-01','2026-01-31')");
-    expect(Number(before[0].revenue_summary.total_received)).toBe(5000);
-    await as(db, USER_A, "delete from deals where id = $1", [deal]);
-    const after = await as<{ revenue_summary: { total_received: number } }>(db, USER_A, "select revenue_summary('2026-01-01','2026-01-31')");
-    expect(Number(after[0].revenue_summary.total_received)).toBe(0);
-  });
-
-  it("won deal value is bucketed by the IST calendar day", async () => {
-    // 2026-03-10 20:00 UTC is 2026-03-11 01:30 in IST
-    const [{ id }] = await as<{ id: string }>(db, USER_A,
-      "insert into deals (client_name, title, amount, status) values ('Edge Co','Edge',700,'active') returning id");
-    await asSystem(db, "update deals set status = 'won', closed_at = '2026-03-10T20:00:00Z' where id = $1", [id]);
-    const day11 = await as<{ revenue_summary: { won_deal_value: number } }>(db, USER_A, "select revenue_summary('2026-03-11','2026-03-11')");
-    const day10 = await as<{ revenue_summary: { won_deal_value: number } }>(db, USER_A, "select revenue_summary('2026-03-10','2026-03-10')");
-    expect(Number(day11[0].revenue_summary.won_deal_value)).toBe(700);
-    expect(Number(day10[0].revenue_summary.won_deal_value)).toBe(0);
   });
 });

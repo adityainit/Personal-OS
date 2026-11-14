@@ -11,31 +11,26 @@ import { createTokenClient } from "@/lib/supabase/server";
 import { env } from "@/lib/env";
 
 export const SERVER_INSTRUCTIONS = `
-You are connected to Aditya's private Personal OS CRM. It has two separate pipelines:
-  1. Instagram brand deals (kind "brand"): brands that could sponsor his content.
-  2. Freelancing (kind "freelance"): businesses he could do freelance work for.
+You are connected to Aditya's private Personal OS CRM, a pipeline of freelance clients: businesses he could do
+freelance work for.
 
 Your role: research assistant and CRM operator. Aditya personally handles ALL communication.
 - NEVER contact anyone, and never claim a message was sent unless Aditya says he sent it.
   This server has no tool that sends anything; drafts are only saved for Aditya to copy.
-- Read get_creator_profile first and tailor every proposal to Aditya's niche, audience and content
-  (brand deals) or his freelance_services (freelancing).
-- Before adding a lead, call check_duplicate with the same kind (create_lead also refuses exact duplicates and
-  returns the existing record).
-- Do real research (use web search) before saving: what they do, their audience/customers, why they fit Aditya,
-  the best collaboration or service to offer, and a fit_score 0-100. Only save qualified leads.
-- Brand deal (kind "brand"): needs its name and Instagram handle (or website). No phone number. Aditya reaches
-  brands by Instagram DM or email. Drafts: instagram_dm (short, casual) and email (with subject, more detailed).
-- Freelance client (kind "freelance"): needs the business name and a phone number with country code
-  (phone_number + phone_country, e.g. "98765 43210" + "IN"). Instagram handle, website and email are optional.
-  Aditya reaches freelance clients on WhatsApp or by email ONLY, never Instagram DM.
+- Read get_creator_profile first and tailor every proposal to his freelance_services and portfolio.
+- Before adding a lead, call check_duplicate (create_lead also refuses exact duplicates and returns the existing record).
+- Do real research (use web search) before saving: what the business does, its customers, why it fits Aditya,
+  the best service to offer, and a fit_score 0-100. Only save qualified leads.
+- A client needs the business name and a phone number with country code (phone_number + phone_country,
+  e.g. "98765 43210" + "IN"). Instagram handle, website and email are optional.
+  Aditya reaches clients on WhatsApp or by email ONLY.
   Drafts: whatsapp (short, friendly, no subject) and email (with subject, more detailed).
 - Only use contact details you actually found on an official/public source (website, Google Maps listing, Instagram
   bio...); always include source_url for each. NEVER guess or invent a phone number, email or handle. If you can't
-  find a public phone number for a business, don't add it as a freelance client.
+  find a public phone number for a business, don't add it.
 - Use mark_outreach_sent / record_interaction only when Aditya explicitly tells you he sent something or got a reply.
-  Follow-ups are then scheduled by the rules for that pipeline (see get_creator_profile, follow_up_rules).
-- Leads can be referenced by id or exact name. Amounts are in INR.
+  Follow-ups are then scheduled by his follow-up rules (see get_creator_profile, follow_up_rules).
+- Leads can be referenced by id or exact name.
 `.trim();
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,7 +86,6 @@ const link = (id: string) => `${env.siteUrl()}/leads/${id}`;
 const leadRef = z.string().min(1).describe("Lead id (uuid) or exact lead name");
 const status = z.enum(LEAD_STATUSES as [string, ...string[]]);
 const channel = z.enum(CHANNELS as [string, ...string[]]);
-const kind = z.enum(["brand", "freelance"]);
 
 const contactInput = z.object({
   name: z.string().optional(),
@@ -105,7 +99,7 @@ const contactInput = z.object({
 });
 
 const draftInput = z.object({
-  channel: channel.describe("Brand deals: instagram_dm or email. Freelance clients: whatsapp or email only."),
+  channel: channel.describe("whatsapp or email only."),
   subject: z.string().optional().describe("Email subject (email only)"),
   body: z.string().min(1),
 });
@@ -122,10 +116,10 @@ const leadInputShape = {
   research: z
     .string()
     .optional()
-    .describe("Full research notes in markdown: products, audience, marketing, past creator collabs, what they might need"),
-  opportunity: z.string().optional().describe("The collaboration opportunity"),
-  why_fit: z.string().optional().describe("Why they would want to work with Aditya"),
-  suggested_service: z.string().optional().describe("Best collaboration format to offer, e.g. reel + story set"),
+    .describe("Full research notes in markdown: products, audience, marketing, what they might need"),
+  opportunity: z.string().optional().describe("What the business needs"),
+  why_fit: z.string().optional().describe("Why Aditya is a good fit for them"),
+  suggested_service: z.string().optional().describe("Best service to offer, e.g. landing page + WhatsApp chatbot"),
   fit_score: z.number().int().min(0).max(100).optional(),
   tags: z.array(z.string()).optional(),
 };
@@ -140,7 +134,7 @@ export function registerTools(server: McpServer) {
     {
       title: "Get creator profile",
       description:
-        "Aditya's Instagram creator profile (niche, audience, followers, engagement, past collaborations, rates). Read this before finding brands.",
+        "Aditya's profile (niche, freelance services, portfolio, rates). Read this before finding clients.",
       inputSchema: z.object({}),
       annotations: RO,
     },
@@ -149,8 +143,7 @@ export function registerTools(server: McpServer) {
       return {
         creator_profile: s.creator_profile,
         follow_up_rules: {
-          brand: followUpRules(s, "brand"),
-          freelance: followUpRules(s, "freelance"),
+          ...followUpRules(s),
           meaning: "first = days after the first message, gap = days between later follow-ups, max = follow-ups before stopping",
         },
         note: Object.keys(s.creator_profile ?? {}).length
@@ -193,7 +186,7 @@ export function registerTools(server: McpServer) {
     "dashboard_stats",
     {
       title: "Dashboard stats",
-      description: "Headline CRM numbers: brands, freelance clients, messages sent, replies, follow-ups due, negotiations, wins, revenue, pending payments.",
+      description: "Headline CRM numbers: clients, messages sent, replies, follow-ups due, negotiations, wins and losses.",
       inputSchema: z.object({}),
       annotations: RO,
     },
@@ -206,9 +199,8 @@ export function registerTools(server: McpServer) {
     {
       title: "Check for duplicate lead",
       description:
-        "Check whether a lead already exists in a pipeline (by website domain, Instagram handle, phone number or similar name). Call before create_lead.",
+        "Check whether a lead already exists (by website domain, Instagram handle, phone number or similar name). Call before create_lead.",
       inputSchema: z.object({
-        kind: kind.optional().describe("Pipeline to check; omit to check both"),
         name: z.string().optional(),
         website: z.string().optional(),
         instagram_handle: z.string().optional(),
@@ -216,13 +208,12 @@ export function registerTools(server: McpServer) {
       }),
       annotations: RO,
     },
-    run(async (db, a: { kind?: "brand" | "freelance"; name?: string; website?: string; instagram_handle?: string; phone?: string }) => {
+    run(async (db, a: { name?: string; website?: string; instagram_handle?: string; phone?: string }) => {
       const matches = await repo.checkDuplicate(db, {
         name: a.name,
         website: a.website,
         instagram: a.instagram_handle,
         phone: a.phone,
-        kind: a.kind,
       });
       return { is_duplicate: matches.some((m) => m.match_type !== "name" || m.score >= 0.8), matches };
     }),
@@ -231,19 +222,18 @@ export function registerTools(server: McpServer) {
   server.registerTool(
     "create_lead",
     {
-      title: "Add brand or freelance client to CRM",
+      title: "Add freelance client to CRM",
       description:
-        "Save a researched, QUALIFIED lead with research, opportunity, fit score, public contacts and outreach drafts. kind=brand (default): needs instagram_handle or website, no phone. kind=freelance: needs phone_number + phone_country (found publicly); Instagram optional; drafts must be whatsapp or email. Email is optional. Refuses duplicates and returns the existing lead instead.",
+        "Save a researched, QUALIFIED freelance client with research, opportunity, fit score, public contacts and outreach drafts. Needs phone_number + phone_country (found publicly); Instagram, website and email are optional; drafts must be whatsapp or email. Refuses duplicates and returns the existing lead instead.",
       inputSchema: z.object({
-        kind: kind.optional().describe("brand (default) or freelance"),
         ...leadInputShape,
-        phone_number: z.string().optional().describe("Required for freelance: the business's public phone number"),
+        phone_number: z.string().optional().describe("Required: the business's public phone number"),
         phone_country: z.string().optional().describe("ISO country code of the phone number, e.g. IN"),
         contact_person: z.string().optional().describe("Name of the person to contact, if publicly listed"),
         email: z.string().optional().describe("Public email address; omit if none was found — never guess"),
         contacts: z.array(contactInput).optional(),
         drafts: z.array(draftInput).optional().describe("Outreach drafts — saved only, never sent"),
-        allow_similar: z.boolean().optional().describe("Set true only if a brand with a similar name is genuinely a different brand"),
+        allow_similar: z.boolean().optional().describe("Set true only if a lead with a similar name is genuinely a different business"),
       }),
       annotations: WRITE,
     },
@@ -254,7 +244,7 @@ export function registerTools(server: McpServer) {
         return {
           duplicate: true,
           message: `Not added: "${res.lead.name}" already exists (status ${res.lead.status}) — same website, Instagram handle, phone or name. Update it instead if needed.`,
-          existing: { id: res.lead.id, kind: res.lead.kind, name: res.lead.name, status: res.lead.status, url: link(res.lead.id) },
+          existing: { id: res.lead.id, name: res.lead.name, status: res.lead.status, url: link(res.lead.id) },
         };
       }
       const savedContacts = [];
@@ -276,7 +266,7 @@ export function registerTools(server: McpServer) {
       }
       return {
         created: true,
-        lead: { id: res.lead.id, kind: res.lead.kind, name: res.lead.name, status: savedDrafts.length ? "drafted" : res.lead.status, url: link(res.lead.id) },
+        lead: { id: res.lead.id, name: res.lead.name, status: savedDrafts.length ? "drafted" : res.lead.status, url: link(res.lead.id) },
         contacts_saved: savedContacts.length,
         drafts_saved: savedDrafts.map((d) => ({ id: d.id, channel: d.channel })),
         similar_existing: res.similar.length ? res.similar : undefined,
@@ -289,7 +279,7 @@ export function registerTools(server: McpServer) {
     "update_lead",
     {
       title: "Update lead",
-      description: "Edit a lead's details or research. Only provided fields change. A lead's kind (brand/freelance) can't change.",
+      description: "Edit a lead's details or research. Only provided fields change.",
       inputSchema: z.object({
         lead: leadRef,
         ...Object.fromEntries(Object.entries(leadInputShape).map(([k, v]) => [k, v.optional()])),
@@ -333,7 +323,6 @@ export function registerTools(server: McpServer) {
       title: "Search leads",
       description: "List/search leads with filters. Returns compact rows; use get_lead for full details.",
       inputSchema: z.object({
-        kind: kind.optional().describe("brand or freelance; omit for both"),
         query: z.string().optional().describe("Text in name, domain, handle, industry or phone"),
         status: z.array(status).optional(),
         min_fit_score: z.number().int().min(0).max(100).optional(),
@@ -343,9 +332,8 @@ export function registerTools(server: McpServer) {
       }),
       annotations: RO,
     },
-    run(async (db, a: { kind?: "brand" | "freelance"; query?: string; status?: string[]; min_fit_score?: number; source?: "claude" | "manual"; sort?: "updated" | "created" | "fit" | "name"; limit?: number }) => {
+    run(async (db, a: { query?: string; status?: string[]; min_fit_score?: number; source?: "claude" | "manual"; sort?: "updated" | "created" | "fit" | "name"; limit?: number }) => {
       const leads = await repo.listLeads(db, {
-        kind: a.kind,
         q: a.query,
         status: a.status as never,
         minFit: a.min_fit_score,
@@ -357,7 +345,6 @@ export function registerTools(server: McpServer) {
         count: leads.length,
         leads: leads.map((l) => ({
           id: l.id,
-          kind: l.kind,
           name: l.name,
           status: l.status,
           fit_score: l.fit_score,
@@ -377,7 +364,7 @@ export function registerTools(server: McpServer) {
     "get_lead",
     {
       title: "Get lead with full history",
-      description: "Full record: research, contacts, outreach drafts & sent messages, conversation, follow-ups, deals & payments, activity history.",
+      description: "Full record: research, contacts, outreach drafts & sent messages, conversation, follow-ups, activity history.",
       inputSchema: z.object({ lead: leadRef }),
       annotations: RO,
     },
@@ -409,7 +396,7 @@ export function registerTools(server: McpServer) {
     {
       title: "Save outreach draft",
       description:
-        "Save a personalised draft for Aditya to review and send himself. Brand deals: instagram_dm or email. Freelance clients: whatsapp or email. Never sends anything.",
+        "Save a personalised draft for Aditya to review and send himself. whatsapp or email. Never sends anything.",
       inputSchema: z.object({ lead: leadRef, ...draftInput.shape }),
       annotations: WRITE,
     },
@@ -493,30 +480,28 @@ export function registerTools(server: McpServer) {
     "list_follow_ups",
     {
       title: "List follow-ups",
-      description: "Pending follow-ups: overdue, due today (India time), upcoming, or all. Brand deals and freelancing have separate rules.",
+      description: "Pending follow-ups: overdue, due today (India time), upcoming, or all.",
       inputSchema: z.object({
         range: z.enum(["overdue", "today", "upcoming", "all", "due"]).optional().describe("'due' = overdue + today (default)"),
-        kind: kind.optional().describe("brand or freelance; omit for both"),
       }),
       annotations: RO,
     },
-    run(async (db, a: { range?: "overdue" | "today" | "upcoming" | "all" | "due"; kind?: "brand" | "freelance" }) => {
+    run(async (db, a: { range?: "overdue" | "today" | "upcoming" | "all" | "due" }) => {
       const r = a.range ?? "due";
       const items =
         r === "due"
           ? [
-              ...(await repo.listFollowUps(db, { range: "overdue", kind: a.kind })),
-              ...(await repo.listFollowUps(db, { range: "today", kind: a.kind })),
+              ...(await repo.listFollowUps(db, { range: "overdue" })),
+              ...(await repo.listFollowUps(db, { range: "today" })),
             ]
-          : await repo.listFollowUps(db, { range: r, kind: a.kind });
+          : await repo.listFollowUps(db, { range: r });
       return {
         count: items.length,
         follow_ups: items.map((f) => ({
           id: f.id,
-          kind: f.lead.kind,
           lead: f.lead.name,
           lead_id: f.lead.id,
-          reach_on: f.lead.kind === "freelance" ? "WhatsApp or email" : "Instagram DM or email",
+          reach_on: "WhatsApp or email",
           due_at: f.due_at,
           attempt: f.attempt,
           reason: f.reason,
@@ -558,115 +543,6 @@ export function registerTools(server: McpServer) {
     ),
   );
 
-  // ---------------------------------------------------------------- money
-  server.registerTool(
-    "create_deal",
-    {
-      title: "Create deal / record income",
-      description:
-        "Record a brand collaboration or freelance project with its amount (INR). Set status won when confirmed. Pass received_amount to also log a payment (e.g. 'record ₹15,000 from X').",
-      inputSchema: z.object({
-        lead: leadRef.optional().describe("Linked brand or client; omit and give client_name for ones not in the CRM"),
-        client_name: z.string().optional(),
-        title: z.string().min(1),
-        amount: z.number().min(0),
-        status: z.enum(["active", "won", "lost"]).optional(),
-        details: z.string().optional(),
-        expected_date: z.string().optional().describe("YYYY-MM-DD"),
-        payment_due_date: z.string().optional().describe("YYYY-MM-DD"),
-        received_amount: z.number().positive().optional(),
-        received_on: z.string().optional().describe("YYYY-MM-DD, default today"),
-      }),
-      annotations: WRITE,
-    },
-    run(async (db, a: { lead?: string; client_name?: string; title: string; amount: number; status?: string; details?: string; expected_date?: string; payment_due_date?: string; received_amount?: number; received_on?: string }) => {
-      const l = a.lead ? await resolveLead(db, a.lead) : null;
-      const deal = await repo.createDeal(db, {
-        lead_id: l?.id ?? null,
-        client_name: a.client_name ?? null,
-        title: a.title,
-        amount: a.amount,
-        status: a.status ?? "active",
-        details: a.details,
-        expected_date: a.expected_date,
-        payment_due_date: a.payment_due_date,
-      });
-      const payment = a.received_amount
-        ? await repo.recordPayment(db, deal.id, { amount: a.received_amount, paid_on: a.received_on ?? new Date().toISOString().slice(0, 10) })
-        : null;
-      return { deal, payment };
-    }),
-  );
-
-  server.registerTool(
-    "update_deal",
-    {
-      title: "Update deal",
-      description: "Change a deal's amount, status (active/won/lost), dates or details.",
-      inputSchema: z.object({
-        deal_id: z.uuid(),
-        title: z.string().optional(),
-        amount: z.number().min(0).optional(),
-        status: z.enum(["active", "won", "lost"]).optional(),
-        details: z.string().optional(),
-        expected_date: z.string().optional(),
-        payment_due_date: z.string().optional(),
-      }),
-      annotations: WRITE,
-    },
-    run(async (db, a: Record<string, unknown> & { deal_id: string }) => {
-      const { deal_id, ...patch } = a;
-      return repo.updateDeal(db, deal_id, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
-    }),
-  );
-
-  server.registerTool(
-    "record_payment",
-    {
-      title: "Record payment received",
-      description: "Log money received against a deal. Use list_deals (or get_lead) to find the deal id.",
-      inputSchema: z.object({
-        deal_id: z.uuid(),
-        amount: z.number().positive(),
-        paid_on: z.string().optional().describe("YYYY-MM-DD, default today"),
-        method: z.string().optional(),
-        note: z.string().optional(),
-      }),
-      annotations: WRITE,
-    },
-    run(async (db, a: { deal_id: string; amount: number; paid_on?: string; method?: string; note?: string }) =>
-      repo.recordPayment(db, a.deal_id, { ...a, paid_on: a.paid_on ?? new Date().toISOString().slice(0, 10) }),
-    ),
-  );
-
-  server.registerTool(
-    "list_deals",
-    {
-      title: "List deals",
-      description: "Deals with amounts, payments received and pending balance.",
-      inputSchema: z.object({ status: z.enum(["active", "won", "lost"]).optional() }),
-      annotations: RO,
-    },
-    run(async (db, a: { status?: "active" | "won" | "lost" }) => {
-      const deals = await repo.listDeals(db, a);
-      return deals.map((d) => {
-        const received = d.payments.reduce((s, p) => s + Number(p.amount), 0);
-        return { id: d.id, client: d.client_name, lead_id: d.lead_id, title: d.title, amount: Number(d.amount), received, pending: Math.max(Number(d.amount) - received, 0), status: d.status };
-      });
-    }),
-  );
-
-  server.registerTool(
-    "revenue_summary",
-    {
-      title: "Revenue summary",
-      description: "Total, monthly and by brand revenue, pending payments and expected revenue. Dates YYYY-MM-DD.",
-      inputSchema: z.object({ from: z.string().optional(), to: z.string().optional() }),
-      annotations: RO,
-    },
-    run(async (db, a: { from?: string; to?: string }) => repo.revenueSummary(db, a.from, a.to)),
-  );
-
   // ---------------------------------------------------------------- insights
   server.registerTool(
     "top_opportunities",
@@ -675,14 +551,12 @@ export function registerTools(server: McpServer) {
       description: "Open leads ranked by fit score, pipeline momentum and freshness.",
       inputSchema: z.object({
         limit: z.number().int().min(1).max(50).optional(),
-        kind: kind.optional().describe("brand or freelance; omit for both"),
       }),
       annotations: RO,
     },
-    run(async (db, a: { limit?: number; kind?: "brand" | "freelance" }) =>
-      (await repo.topOpportunities(db, a.limit ?? 10, a.kind)).map((l) => ({
+    run(async (db, a: { limit?: number }) =>
+      (await repo.topOpportunities(db, a.limit ?? 10)).map((l) => ({
         id: l.id,
-        kind: l.kind,
         name: l.name,
         status: l.status,
         fit_score: l.fit_score,
@@ -698,33 +572,31 @@ export function registerTools(server: McpServer) {
     "pipeline_report",
     {
       title: "Pipeline report",
-      description: "Outreach funnel counts and conversion in a period (ISO timestamps), for one pipeline or both.",
+      description: "Outreach funnel counts and conversion in a period (ISO timestamps).",
       inputSchema: z.object({
         from: z.string().optional(),
         to: z.string().optional(),
-        kind: kind.optional().describe("brand or freelance; omit for both"),
       }),
       annotations: RO,
     },
-    run(async (db, a: { from?: string; to?: string; kind?: "brand" | "freelance" }) => repo.pipelineFunnel(db, a.from, a.to, a.kind)),
+    run(async (db, a: { from?: string; to?: string }) => repo.pipelineFunnel(db, a.from, a.to)),
   );
 
   server.registerTool(
     "recent_activity",
     {
       title: "Recent activity",
-      description: "Latest CRM activity, optionally for one lead or one pipeline.",
+      description: "Latest CRM activity, optionally for one lead.",
       inputSchema: z.object({
         lead: leadRef.optional(),
-        kind: kind.optional().describe("brand or freelance; omit for both"),
         limit: z.number().int().min(1).max(100).optional(),
       }),
       annotations: RO,
     },
-    run(async (db, a: { lead?: string; kind?: "brand" | "freelance"; limit?: number }) => {
+    run(async (db, a: { lead?: string; limit?: number }) => {
       const leadId = a.lead ? (await resolveLead(db, a.lead)).id : undefined;
-      const rows = await repo.listActivities(db, { leadId, kind: a.kind, limit: a.limit ?? 25 });
-      return rows.map((r) => ({ at: r.created_at, type: r.type, summary: r.summary, actor: r.actor, lead: r.lead?.name, kind: r.lead?.kind }));
+      const rows = await repo.listActivities(db, { leadId, limit: a.limit ?? 25 });
+      return rows.map((r) => ({ at: r.created_at, type: r.type, summary: r.summary, actor: r.actor, lead: r.lead?.name }));
     }),
   );
 }

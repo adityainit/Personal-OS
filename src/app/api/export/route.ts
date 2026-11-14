@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { toCsv } from "@/lib/csv";
 import { messagesByDay } from "@/lib/domain/messages";
-import { listSentMessages, pipelineFunnel, revenueSummary } from "@/lib/domain/repo";
+import { listSentMessages, pipelineFunnel } from "@/lib/domain/repo";
 import { isAllowedEmail } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { ymd } from "@/lib/utils";
 
-const TABLES = ["leads", "contacts", "outreach", "interactions", "follow_ups", "deals", "payments", "activities", "settings"] as const;
+const TABLES = ["leads", "contacts", "outreach", "interactions", "follow_ups", "activities", "settings"] as const;
 
 function file(body: string, name: string, type: string) {
   return new NextResponse(body, {
@@ -48,8 +48,7 @@ export async function GET(req: NextRequest) {
         return file(JSON.stringify(backup, null, 2), `personal-os-backup-${stamp}.json`, "application/json");
       }
       case "leads": {
-        const kind = sp.get("kind");
-        const rows = (await all(supabase, "leads")).filter((r) => !kind || r.kind === kind);
+        const rows = await all(supabase, "leads");
         const contacts = await all(supabase, "contacts");
         const byLead = new Map<string, string[]>();
         for (const c of contacts) {
@@ -58,31 +57,11 @@ export async function GET(req: NextRequest) {
         }
         const out = rows.map((r) => ({ ...r, contacts: byLead.get(r.id as string)?.join("; ") ?? "" }));
         const cols = [
-          "name", "kind", "status", "fit_score", "phone_e164", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
+          "name", "status", "fit_score", "phone_e164", "website", "instagram_handle", "linkedin_url", "industry", "location", "company_size",
           "suggested_service", "opportunity", "why_fit", "description", "research", "contacts", "tags", "source",
           "last_contacted_at", "created_at", "updated_at", "id",
         ];
-        const prefix = kind === "freelance" ? "freelance-clients" : kind === "brand" ? "brand-leads" : "leads";
-        return file(toCsv(out, cols), `${prefix}-${stamp}.csv`, "text/csv");
-      }
-      case "deals": {
-        const deals = await all(supabase, "deals", "*, payments(amount)");
-        const out = deals.map((d) => {
-          const received = ((d.payments as { amount: number }[]) ?? []).reduce((s, p) => s + Number(p.amount), 0);
-          const { payments: _omit, ...rest } = d;
-          void _omit;
-          return { ...rest, received, pending: Math.max(Number(d.amount) - received, 0) };
-        });
-        const cols = ["client_name", "title", "amount", "received", "pending", "status", "expected_date", "payment_due_date", "closed_at", "details", "created_at", "id", "lead_id"];
-        return file(toCsv(out, cols), `deals-${stamp}.csv`, "text/csv");
-      }
-      case "payments": {
-        const rows = await all(supabase, "payments", "*, deal:deals(title, client_name)");
-        const out = rows.map((p) => {
-          const deal = p.deal as { title: string; client_name: string } | null;
-          return { paid_on: p.paid_on, amount: p.amount, client: deal?.client_name, deal: deal?.title, method: p.method, note: p.note, id: p.id };
-        });
-        return file(toCsv(out), `payments-${stamp}.csv`, "text/csv");
+        return file(toCsv(out, cols), `freelance-clients-${stamp}.csv`, "text/csv");
       }
       case "follow_ups": {
         const rows = await all(supabase, "follow_ups", "*, lead:leads(name)");
@@ -91,29 +70,15 @@ export async function GET(req: NextRequest) {
       }
       case "activities": {
         const rows = await all(supabase, "activities");
-        return file(toCsv(rows, ["created_at", "type", "actor", "summary", "lead_id", "deal_id", "metadata", "id"]), `activity-${stamp}.csv`, "text/csv");
+        return file(toCsv(rows, ["created_at", "type", "actor", "summary", "lead_id", "metadata", "id"]), `activity-${stamp}.csv`, "text/csv");
       }
       case "report": {
         const from = sp.get("from") ?? undefined;
         const to = sp.get("to") ?? undefined;
-        const [b, f, r, sent] = await Promise.all([
-          pipelineFunnel(supabase, from, to, "brand"),
-          pipelineFunnel(supabase, from, to, "freelance"),
-          revenueSummary(supabase, sp.get("dfrom") ?? undefined, sp.get("dto") ?? undefined),
-          listSentMessages(supabase, { from, to }),
-        ]);
+        const [funnel, sent] = await Promise.all([pipelineFunnel(supabase, from, to), listSentMessages(supabase, { from, to })]);
         const rows = [
-          ...Object.entries(b).map(([k, v]) => ({ section: "brand_deals", metric: k, value: v })),
-          ...Object.entries(f).map(([k, v]) => ({ section: "freelancing", metric: k, value: v })),
-          ...messagesByDay(sent).flatMap((d) => [
-            { section: "messages_sent_brand", metric: d.day, value: d.brand },
-            { section: "messages_sent_freelance", metric: d.day, value: d.freelance },
-          ]),
-          ...Object.entries(r)
-            .filter(([, v]) => typeof v !== "object")
-            .map(([k, v]) => ({ section: "revenue", metric: k, value: v })),
-          ...r.monthly.map((m) => ({ section: "revenue_monthly", metric: m.month, value: m.total })),
-          ...r.by_client.map((c) => ({ section: "revenue_by_client", metric: c.client, value: c.received })),
+          ...Object.entries(funnel).map(([k, v]) => ({ section: "pipeline", metric: k, value: v })),
+          ...messagesByDay(sent).map((d) => ({ section: "messages_sent", metric: d.day, value: d.total })),
         ];
         const label = `${sp.get("dfrom") ?? "start"}_to_${sp.get("dto") ?? stamp}`;
         return file(toCsv(rows, ["section", "metric", "value"]), `report-${label}.csv`, "text/csv");

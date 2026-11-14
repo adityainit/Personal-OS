@@ -7,10 +7,10 @@ import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/form";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
-import { KIND_PATH, LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
+import { LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
 import { dayLabel, lastNDays, messagesByDay, messagesByLead, type DayTotal } from "@/lib/domain/messages";
 import { listLeads, listSentMessages, type LeadFilters } from "@/lib/domain/repo";
-import type { LeadKind, LeadStatus } from "@/lib/domain/types";
+import type { LeadStatus } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
 import { cn, fmtDate, ymd } from "@/lib/utils";
 import { LeadFields } from "./lead-form";
@@ -20,36 +20,22 @@ import { LeadsTable, type LeadRow } from "./leads-table";
 type SP = Record<string, string | string[] | undefined>;
 const str = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
-const COPY = {
-  brand: {
-    title: "Instagram Brand Deals",
-    description: "Brands that could sponsor or collaborate with your content.",
-    empty: "No brands yet",
-    emptyHint: 'Ask Claude: "Find 10 brands that fit my Instagram profile and add them to my CRM."',
-    add: "Add brand",
-    dupes: "Duplicates are detected by Instagram handle and website.",
-    filter: "Filter by name, @handle, domain",
-    noun: "brand",
-  },
-  freelance: {
-    title: "Freelancing",
-    description: "Businesses you could do freelance work for. You reach them on WhatsApp or by email.",
-    empty: "No freelance clients yet",
-    emptyHint: 'Ask Claude: "Find 10 local businesses that need a better website and add them to my freelancing pipeline."',
-    add: "Add client",
-    dupes: "Duplicates are detected by phone number, Instagram handle and website.",
-    filter: "Filter by name, @handle, domain, phone",
-    noun: "client",
-  },
+const copy = {
+  title: "Freelancing",
+  description: "Businesses you could do freelance work for. You reach them on WhatsApp or by email.",
+  empty: "No clients yet",
+  emptyHint: 'Ask Claude: "Find 10 local businesses that need a better website and add them to my CRM."',
+  add: "Add client",
+  dupes: "Duplicates are detected by phone number, Instagram handle and website.",
+  filter: "Filter by name, @handle, domain, phone",
+  noun: "client",
 } as const;
 
-export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams: SP; kind?: LeadKind }) {
-  const copy = COPY[kind];
+export async function LeadsPage({ searchParams }: { searchParams: SP }) {
   const { supabase } = await requireUser();
   const view = str(searchParams.view) === "board" ? "board" : "table";
   const status = str(searchParams.status);
   const filters: LeadFilters = {
-    kind,
     q: str(searchParams.q),
     status: status === "open"
       ? ["new", "researched", "drafted", "contacted", "replied", "interested", "negotiating"]
@@ -58,7 +44,7 @@ export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams
     source: str(searchParams.source) === "claude" ? "claude" : str(searchParams.source) === "manual" ? "manual" : undefined,
     sort: (["updated", "created", "fit", "name"] as const).find((s) => s === str(searchParams.sort)) ?? "created",
   };
-  const [allLeads, sent] = await Promise.all([listLeads(supabase, filters), listSentMessages(supabase, { kind })]);
+  const [allLeads, sent] = await Promise.all([listLeads(supabase, filters), listSentMessages(supabase)]);
   const byDay = messagesByDay(sent);
   const byLead = messagesByLead(sent);
   const sentDay = /^\d{4}-\d{2}-\d{2}$/.test(str(searchParams.sent) ?? "") ? str(searchParams.sent)! : undefined;
@@ -68,7 +54,7 @@ export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams
     .filter((l) => !contactedThatDay || contactedThatDay.has(l.id))
     .map((l) => ({ ...l, messages: byLead[l.id] ?? null }));
   const sentPerDay = Object.fromEntries(byDay.map((d) => [d.day, d.total]));
-  const base = KIND_PATH[kind];
+  const base = "/freelance";
   const qs = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...searchParams, ...patch })) if (typeof v === "string" && v) p.set(k, v);
@@ -84,7 +70,7 @@ export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams
         description={`${copy.description} ${leads.length} shown.`}
         actions={
           <>
-            <a href={`/api/export?type=leads&kind=${kind}`} className={buttonClass("secondary", "md")}>
+            <a href="/api/export?type=leads" className={buttonClass("secondary", "md")}>
               <Download /> CSV
             </a>
             <Dialog
@@ -94,7 +80,7 @@ export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams
               description={copy.dupes}
             >
               <ActionForm action={createLeadAction}>
-                <LeadFields kind={kind} />
+                <LeadFields />
               </ActionForm>
             </Dialog>
           </>
@@ -189,7 +175,7 @@ export async function LeadsPage({ searchParams, kind = "brand" }: { searchParams
         ) : view === "board" ? (
           <LeadsBoard leads={leads} />
         ) : (
-          <LeadsTable leads={leads} kind={kind} groupByDate={filters.sort === "created"} sentPerDay={sentPerDay} />
+          <LeadsTable leads={leads} groupByDate={filters.sort === "created"} sentPerDay={sentPerDay} />
         )}
       </Card>
     </>

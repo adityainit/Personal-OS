@@ -6,7 +6,6 @@ import {
   CalendarClock,
   BriefcaseBusiness,
   ChartColumn,
-  IndianRupee,
   LayoutDashboard,
   Menu,
   Settings,
@@ -16,15 +15,12 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { LogoMark } from "@/components/brand/logo";
-import { InstagramIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/brands", label: "Brand Deals", icon: InstagramIcon },
   { href: "/freelance", label: "Freelancing", icon: BriefcaseBusiness },
   { href: "/follow-ups", label: "Follow-ups", icon: CalendarClock, badge: "followUps" as const },
-  { href: "/revenue", label: "Revenue", icon: IndianRupee },
   { href: "/reports", label: "Reports", icon: ChartColumn },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/assistant", label: "Claude Assistant", icon: Bot },
@@ -53,7 +49,7 @@ function NavLinks({ dueCount, onNavigate }: { dueCount: number; onNavigate?: () 
   const matches = (href: string) =>
     pathname === href ||
     pathname.startsWith(href + "/") ||
-    (href === "/brands" && pathname.startsWith("/leads/"));
+    (href === "/freelance" && pathname.startsWith("/leads/"));
   const isActive = (href: string) => (optimistic ? optimistic === href : matches(href));
   return (
     <nav className="flex flex-col gap-0.5">

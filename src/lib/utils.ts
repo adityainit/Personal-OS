@@ -6,19 +6,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
-const inrCompact = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
-export function money(n: number | string | null | undefined, compact = false) {
-  const v = Number(n ?? 0);
-  return (compact && Math.abs(v) >= 100_000 ? inrCompact : inr).format(v);
-}
-
 export function num(n: number | string | null | undefined) {
   return new Intl.NumberFormat("en-IN").format(Number(n ?? 0));
 }
@@ -116,13 +103,4 @@ export function whatsappUrl(e164: string | null | undefined, text?: string) {
 
 export function pct(n: number | null | undefined) {
   return `${Number(n ?? 0).toFixed(1).replace(/\.0$/, "")}%`;
-}
-
-/**
- * Activity summaries are written by the database with plain amounts ("2000.00").
- * Show them as money ("₹2,000") without changing the stored log.
- */
-export function prettySummary(summary: string | null | undefined) {
-  if (!summary) return "";
-  return summary.replace(/(^|[\s(→])(\d+)\.(\d{2})(?=$|[\s),→])/g, (_m, pre: string, int: string, dec: string) => pre + money(`${int}.${dec}`));
 }

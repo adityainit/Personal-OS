@@ -56,7 +56,7 @@ export default async function ConsentPage({ searchParams }: PageProps<"/oauth/co
       </div>
       {sp.error ? <p className="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">Something went wrong. Try again.</p> : null}
       <ul className="mb-5 flex flex-col gap-2 text-sm">
-        <li className="flex gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" /> Read and update your brand deals, follow-ups and revenue</li>
+        <li className="flex gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" /> Read and update your freelance clients, outreach and follow-ups</li>
         <li className="flex gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" /> Save research and outreach drafts</li>
         <li className="flex gap-2"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted" /> It cannot send messages, delete records, or access other accounts</li>
       </ul>

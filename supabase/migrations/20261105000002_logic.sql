@@ -15,7 +15,7 @@ returns public.actor_type language sql stable set search_path = '' as $$
 $$;
 
 create or replace function private.log_activity(
-  p_owner uuid, p_lead uuid, p_deal uuid, p_type text, p_summary text,
+  p_owner uuid, p_lead uuid, p_type text, p_summary text,
   p_metadata jsonb default '{}'::jsonb, p_notify boolean default false
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare
@@ -27,8 +27,8 @@ begin
     raise exception 'activity owner mismatch';
   end if;
 
-  insert into public.activities (owner_id, lead_id, deal_id, type, summary, metadata, actor)
-  values (p_owner, p_lead, p_deal, p_type, p_summary, coalesce(p_metadata, '{}'::jsonb), v_actor)
+  insert into public.activities (owner_id, lead_id, type, summary, metadata, actor)
+  values (p_owner, p_lead, p_type, p_summary, coalesce(p_metadata, '{}'::jsonb), v_actor)
   returning id into v_id;
 
   -- Notify on system events (e.g. follow-up due) and on anything Claude did.
@@ -40,7 +40,7 @@ end $$;
 
 revoke all on function private.log_activity from public;
 grant execute on function private.current_actor() to authenticated;
-grant execute on function private.log_activity(uuid, uuid, uuid, text, text, jsonb, boolean) to authenticated;
+grant execute on function private.log_activity(uuid, uuid, text, text, jsonb, boolean) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- updated_at maintenance
@@ -55,7 +55,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','leads','contacts','outreach','follow_ups','deals','payments']
+  foreach t in array array['settings','leads','contacts','outreach','follow_ups']
   loop
     execute format('create trigger touch_updated_at before update on public.%I
                     for each row execute function private.touch_updated_at()', t);
@@ -97,11 +97,11 @@ create or replace function private.leads_after_change()
 returns trigger language plpgsql set search_path = '' as $$
 begin
   if tg_op = 'INSERT' then
-    perform private.log_activity(new.owner_id, new.id, null, 'lead_created',
-      format('New brand added: %s', new.name),
+    perform private.log_activity(new.owner_id, new.id, 'lead_created',
+      format('New freelance client added: %s', new.name),
       jsonb_build_object('source', new.source, 'fit_score', new.fit_score));
     if coalesce(btrim(new.research), '') <> '' then
-      perform private.log_activity(new.owner_id, new.id, null, 'research_completed',
+      perform private.log_activity(new.owner_id, new.id, 'research_completed',
         format('Research saved for %s', new.name), '{}'::jsonb);
     end if;
     return new;
@@ -109,8 +109,8 @@ begin
 
   if tg_op = 'UPDATE' then
     if new.status is distinct from old.status then
-      perform private.log_activity(new.owner_id, new.id, null,
-        case new.status when 'won' then 'deal_won' when 'lost' then 'deal_lost' else 'status_changed' end,
+      perform private.log_activity(new.owner_id, new.id,
+        case new.status when 'won' then 'lead_won' when 'lost' then 'lead_lost' else 'status_changed' end,
         format('%s: %s → %s', new.name, replace(old.status::text, '_', ' '), replace(new.status::text, '_', ' ')),
         jsonb_build_object('from', old.status, 'to', new.status));
       if new.status in ('won', 'lost', 'do_not_contact') then
@@ -119,7 +119,7 @@ begin
     end if;
 
     if coalesce(btrim(new.research), '') <> '' and new.research is distinct from old.research then
-      perform private.log_activity(new.owner_id, new.id, null,
+      perform private.log_activity(new.owner_id, new.id,
         case when coalesce(btrim(old.research), '') = '' then 'research_completed' else 'research_updated' end,
         format('Research %s for %s',
           case when coalesce(btrim(old.research), '') = '' then 'completed' else 'updated' end, new.name),
@@ -129,8 +129,8 @@ begin
   end if;
 
   if tg_op = 'DELETE' then
-    perform private.log_activity(old.owner_id, null, null, 'lead_deleted',
-      format('Deleted brand: %s', old.name),
+    perform private.log_activity(old.owner_id, null, 'lead_deleted',
+      format('Deleted freelance client: %s', old.name),
       jsonb_build_object('lead_id', old.id));
     return old;
   end if;
@@ -144,7 +144,19 @@ create trigger leads_after_update after update on public.leads
 create trigger leads_after_delete after delete on public.leads
   for each row execute function private.leads_after_change();
 
--- Phone numbers are optional; one that is given must still be valid.
+-- Every client needs a phone number (you reach them on WhatsApp), and it must be valid.
+create or replace function private.leads_require_phone()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.phone_e164 is null then
+    raise exception 'Freelance clients need a phone number' using errcode = '23514';
+  end if;
+  return new;
+end $$;
+
+create trigger leads_require_phone before insert or update on public.leads
+  for each row execute function private.leads_require_phone();
+
 create or replace function private.leads_validate_phone()
 returns trigger language plpgsql set search_path = '' as $$
 begin
@@ -174,7 +186,7 @@ create trigger leads_validate_phone before insert or update on public.leads
 create or replace function private.contacts_after_insert()
 returns trigger language plpgsql set search_path = '' as $$
 begin
-  perform private.log_activity(new.owner_id, new.lead_id, null, 'contact_added',
+  perform private.log_activity(new.owner_id, new.lead_id, 'contact_added',
     format('Contact added: %s', coalesce(nullif(new.name, ''), new.email, new.instagram, 'unnamed')),
     jsonb_build_object('contact_id', new.id, 'email', new.email, 'source_url', new.source_url));
   return new;
@@ -192,13 +204,13 @@ begin
   select name into v_name from public.leads where id = new.lead_id;
 
   if tg_op = 'INSERT' and new.status = 'draft' then
-    perform private.log_activity(new.owner_id, new.lead_id, null, 'outreach_drafted',
+    perform private.log_activity(new.owner_id, new.lead_id, 'outreach_drafted',
       format('%s draft prepared for %s', replace(new.channel::text, '_', ' '), v_name),
       jsonb_build_object('outreach_id', new.id, 'channel', new.channel));
     update public.leads set status = 'drafted'
      where id = new.lead_id and status in ('new', 'researched');
   elsif new.status = 'sent' and (tg_op = 'INSERT' or old.status = 'draft') then
-    perform private.log_activity(new.owner_id, new.lead_id, null, 'outreach_sent',
+    perform private.log_activity(new.owner_id, new.lead_id, 'outreach_sent',
       format('Marked %s as sent to %s', replace(new.channel::text, '_', ' '), v_name),
       jsonb_build_object('outreach_id', new.id, 'channel', new.channel, 'sent_at', new.sent_at));
   end if;
@@ -218,7 +230,7 @@ declare v_name text;
 begin
   select name into v_name from public.leads where id = new.lead_id;
 
-  perform private.log_activity(new.owner_id, new.lead_id, null,
+  perform private.log_activity(new.owner_id, new.lead_id,
     case new.type when 'reply' then 'reply_received' when 'decline' then 'lead_declined'
                   else 'interaction_' || new.type::text end,
     case new.type
@@ -255,11 +267,11 @@ begin
   select name into v_name from public.leads where id = new.lead_id;
 
   if tg_op = 'INSERT' then
-    perform private.log_activity(new.owner_id, new.lead_id, null, 'follow_up_scheduled',
+    perform private.log_activity(new.owner_id, new.lead_id, 'follow_up_scheduled',
       format('Follow-up #%s scheduled for %s', new.attempt, v_name),
       jsonb_build_object('follow_up_id', new.id, 'due_at', new.due_at));
   elsif new.status is distinct from old.status then
-    perform private.log_activity(new.owner_id, new.lead_id, null,
+    perform private.log_activity(new.owner_id, new.lead_id,
       case new.status when 'done' then 'follow_up_completed' when 'cancelled' then 'follow_up_cancelled'
                       else 'follow_up_reopened' end,
       format('Follow-up %s for %s%s',
@@ -267,7 +279,7 @@ begin
         v_name, coalesce(' (' || new.reason || ')', '')),
       jsonb_build_object('follow_up_id', new.id, 'reason', new.reason));
   elsif new.due_at is distinct from old.due_at and new.status = 'pending' then
-    perform private.log_activity(new.owner_id, new.lead_id, null, 'follow_up_rescheduled',
+    perform private.log_activity(new.owner_id, new.lead_id, 'follow_up_rescheduled',
       format('Follow-up for %s moved', v_name),
       jsonb_build_object('follow_up_id', new.id, 'from', old.due_at, 'to', new.due_at));
   end if;
@@ -304,7 +316,7 @@ begin
      where f.status = 'pending' and f.due_at <= now() and f.flagged_due_at is null
     returning f.id, f.owner_id, f.lead_id, f.attempt, f.due_at
   loop
-    perform private.log_activity(r.owner_id, r.lead_id, null, 'follow_up_due',
+    perform private.log_activity(r.owner_id, r.lead_id, 'follow_up_due',
       format('Follow-up #%s due: %s', r.attempt, (select name from public.leads where id = r.lead_id)),
       jsonb_build_object('follow_up_id', r.id, 'due_at', r.due_at), true);
     n := n + 1;
@@ -312,89 +324,6 @@ begin
   return n;
 end $$;
 revoke all on function private.flag_due_follow_ups() from public, authenticated;
-
--- ---------------------------------------------------------------------------
--- Deals & payments
--- ---------------------------------------------------------------------------
-create or replace function private.deals_before_write()
-returns trigger language plpgsql set search_path = '' as $$
-begin
-  if new.lead_id is not null and coalesce(btrim(new.client_name), '') = '' then
-    select name into new.client_name from public.leads where id = new.lead_id;
-  end if;
-  if new.status in ('won', 'lost') and (tg_op = 'INSERT' or old.status is distinct from new.status) then
-    new.closed_at := coalesce(new.closed_at, now());
-  elsif new.status = 'active' then
-    new.closed_at := null;
-  end if;
-  return new;
-end $$;
-
-create or replace function private.deals_after_change()
-returns trigger language plpgsql set search_path = '' as $$
-begin
-  if tg_op = 'INSERT' then
-    perform private.log_activity(new.owner_id, new.lead_id, new.id, 'deal_created',
-      format('Deal created: %s (%s) — %s', new.title, new.client_name, new.amount),
-      jsonb_build_object('amount', new.amount, 'status', new.status));
-  elsif new.status is distinct from old.status then
-    perform private.log_activity(new.owner_id, new.lead_id, new.id,
-      case new.status when 'won' then 'deal_won' when 'lost' then 'deal_lost' else 'deal_reopened' end,
-      format('Deal %s: %s (%s)', new.status, new.title, new.client_name),
-      jsonb_build_object('amount', new.amount));
-  elsif new.amount is distinct from old.amount then
-    perform private.log_activity(new.owner_id, new.lead_id, new.id, 'revenue_updated',
-      format('Deal amount updated: %s (%s → %s)', new.title, old.amount, new.amount),
-      jsonb_build_object('from', old.amount, 'to', new.amount));
-  end if;
-
-  if new.lead_id is not null and (tg_op = 'INSERT' or new.status is distinct from old.status) then
-    if new.status = 'won' then
-      update public.leads set status = 'won' where id = new.lead_id and status <> 'won';
-    elsif new.status = 'active' then
-      update public.leads set status = 'negotiating'
-       where id = new.lead_id and status in ('new','researched','drafted','contacted','replied','interested');
-    end if;
-  end if;
-  return new;
-end $$;
-
-create trigger deals_before_insert before insert on public.deals
-  for each row execute function private.deals_before_write();
-create trigger deals_before_update before update on public.deals
-  for each row execute function private.deals_before_write();
-create trigger deals_after_insert after insert on public.deals
-  for each row execute function private.deals_after_change();
-create trigger deals_after_update after update on public.deals
-  for each row execute function private.deals_after_change();
-
-create or replace function private.payments_after_change()
-returns trigger language plpgsql set search_path = '' as $$
-declare d record;
-begin
-  select id, lead_id, title, client_name into d from public.deals where id = coalesce(new.deal_id, old.deal_id);
-  if tg_op = 'INSERT' then
-    perform private.log_activity(new.owner_id, d.lead_id, d.id, 'payment_received',
-      format('Payment received: %s for %s (%s)', new.amount, d.title, d.client_name),
-      jsonb_build_object('payment_id', new.id, 'amount', new.amount, 'paid_on', new.paid_on));
-  elsif tg_op = 'UPDATE' then
-    perform private.log_activity(new.owner_id, d.lead_id, d.id, 'revenue_updated',
-      format('Payment updated for %s (%s)', d.title, d.client_name),
-      jsonb_build_object('payment_id', new.id, 'from', old.amount, 'to', new.amount));
-  elsif tg_op = 'DELETE' and d.id is not null then
-    perform private.log_activity(old.owner_id, d.lead_id, d.id, 'revenue_updated',
-      format('Payment of %s removed from %s', old.amount, d.title),
-      jsonb_build_object('payment_id', old.id, 'amount', old.amount));
-  end if;
-  return coalesce(new, old);
-end $$;
-
-create trigger payments_after_insert after insert on public.payments
-  for each row execute function private.payments_after_change();
-create trigger payments_after_update after update on public.payments
-  for each row execute function private.payments_after_change();
-create trigger payments_after_delete after delete on public.payments
-  for each row execute function private.payments_after_change();
 
 -- ===========================================================================
 -- Public RPCs (exposed through PostgREST; run with caller's RLS)
@@ -478,10 +407,10 @@ begin
    where lead_id = l.id and status = 'pending';
 
   v_days := coalesce(p_follow_up_days,
-                     case when v_attempt <= 1 then coalesce(s.default_follow_up_days, 3)
-                          else coalesce(s.follow_up_gap_days, 4) end);
+                     case when v_attempt <= 1 then coalesce(s.freelance_first_follow_up_days, 3)
+                          else coalesce(s.freelance_follow_up_gap_days, 4) end);
 
-  if v_days > 0 and v_attempt <= coalesce(s.max_follow_ups, 2)
+  if v_days > 0 and v_attempt <= coalesce(s.freelance_max_follow_ups, 2)
      and l.status not in ('won', 'lost', 'do_not_contact') then
     insert into public.follow_ups (owner_id, lead_id, outreach_id, due_at, attempt, reason)
     values (l.owner_id, l.id, o.id, v_sent_at + make_interval(days => v_days), v_attempt, 'No reply yet')
@@ -498,7 +427,7 @@ end $$;
 create or replace function public.dashboard_stats()
 returns jsonb language sql stable set search_path = '' as $$
   select jsonb_build_object(
-    'total_brands',       (select count(*) from public.leads),
+    'total_leads',        (select count(*) from public.leads),
     'new_leads_7d',       (select count(*) from public.leads where created_at > now() - interval '7 days'),
     'messages_sent',      (select count(*) from public.outreach where status = 'sent'),
     'replies_received',   (select count(*) from public.interactions where type = 'reply'),
@@ -507,14 +436,7 @@ returns jsonb language sql stable set search_path = '' as $$
     'follow_ups_pending', (select count(*) from public.follow_ups where status = 'pending'),
     'negotiating',        (select count(*) from public.leads where status = 'negotiating'),
     'won',                (select count(*) from public.leads where status = 'won'),
-    'lost',               (select count(*) from public.leads where status = 'lost'),
-    'revenue_received',   (select coalesce(sum(amount), 0) from public.payments),
-    'pending_payments',   (select coalesce(sum(greatest(d.amount - coalesce(p.paid, 0), 0)), 0)
-                             from public.deals d
-                             left join (select deal_id, sum(amount) paid from public.payments group by deal_id) p
-                               on p.deal_id = d.id
-                            where d.status = 'won'),
-    'expected_revenue',   (select coalesce(sum(amount), 0) from public.deals where status = 'active')
+    'lost',               (select count(*) from public.leads where status = 'lost')
   )
 $$;
 
@@ -537,9 +459,9 @@ create or replace function public.pipeline_funnel(
                   where a.type = 'status_changed' and a.metadata ->> 'to' in ('interested', 'negotiating')
                     and a.created_at >= p_from and a.created_at < p_to),
   won as (select count(distinct a.lead_id) n from public.activities a join l on l.id = a.lead_id
-           where a.type = 'deal_won' and a.created_at >= p_from and a.created_at < p_to),
+           where a.type = 'lead_won' and a.created_at >= p_from and a.created_at < p_to),
   lost as (select count(distinct a.lead_id) n from public.activities a join l on l.id = a.lead_id
-            where a.type = 'deal_lost' and a.created_at >= p_from and a.created_at < p_to)
+            where a.type = 'lead_lost' and a.created_at >= p_from and a.created_at < p_to)
   select jsonb_build_object(
     'discovered', (select n from discovered), 'qualified', (select n from qualified),
     'contacted', (select n from contacted), 'messages_sent', (select n from sent),
@@ -549,37 +471,6 @@ create or replace function public.pipeline_funnel(
                        else round((select n from replied)::numeric / (select n from contacted) * 100, 1) end,
     'conversion_rate', case when (select n from contacted) = 0 then 0
                             else round((select n from won)::numeric / (select n from contacted) * 100, 1) end
-  )
-$$;
-
--- Revenue summary for a period (deal value won uses the IST calendar day).
-create or replace function public.revenue_summary(
-  p_from date default '0001-01-01', p_to date default '9999-12-31'
-) returns jsonb language sql stable set search_path = '' as $$
-  with paid as (
-    select p.amount, p.paid_on, d.client_name, d.lead_id
-      from public.payments p join public.deals d on d.id = p.deal_id
-     where p.paid_on >= p_from and p.paid_on <= p_to
-  ),
-  deal_paid as (
-    select d.*, coalesce((select sum(amount) from public.payments x where x.deal_id = d.id), 0) as received
-      from public.deals d
-  )
-  select jsonb_build_object(
-    'total_received', (select coalesce(sum(amount), 0) from paid),
-    'pending_payments', (select coalesce(sum(greatest(amount - received, 0)), 0) from deal_paid where status = 'won'),
-    'expected_from_active', (select coalesce(sum(greatest(amount - received, 0)), 0) from deal_paid where status = 'active'),
-    'won_deal_value', (select coalesce(sum(amount), 0) from deal_paid
-                        where status = 'won'
-                          and (closed_at at time zone 'Asia/Kolkata')::date >= p_from
-                          and (closed_at at time zone 'Asia/Kolkata')::date <= p_to),
-    'monthly', coalesce((select jsonb_agg(m order by m ->> 'month') from (
-                  select jsonb_build_object('month', to_char(date_trunc('month', paid_on), 'YYYY-MM'),
-                           'total', sum(amount)) m
-                    from paid group by date_trunc('month', paid_on)) s), '[]'::jsonb),
-    'by_client', coalesce((select jsonb_agg(c order by (c ->> 'received')::numeric desc) from (
-                  select jsonb_build_object('client', client_name, 'lead_id', lead_id, 'received', sum(amount)) c
-                    from paid group by client_name, lead_id) s), '[]'::jsonb)
   )
 $$;
 
@@ -622,13 +513,11 @@ revoke execute on function public.pipeline_funnel(timestamptz, timestamptz) from
 revoke execute on function public.search_all(text, integer) from public, anon;
 revoke execute on function public.mark_outreach_sent(uuid, integer, timestamptz, boolean) from public, anon;
 revoke execute on function public.dashboard_stats() from public, anon;
-revoke execute on function public.revenue_summary(date, date) from public, anon;
 grant execute on function public.check_duplicate(text, text, text, text) to authenticated;
 grant execute on function public.pipeline_funnel(timestamptz, timestamptz) to authenticated;
 grant execute on function public.search_all(text, integer) to authenticated;
 grant execute on function public.mark_outreach_sent(uuid, integer, timestamptz, boolean) to authenticated;
 grant execute on function public.dashboard_stats() to authenticated;
-grant execute on function public.revenue_summary(date, date) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Scheduled job: flag due follow-ups every 15 minutes.

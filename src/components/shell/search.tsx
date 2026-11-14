@@ -64,7 +64,7 @@ export function GlobalSearch() {
         className="flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm text-muted transition hover:border-ring/50"
       >
         <Search className="size-4" />
-        <span className="flex-1 truncate text-left">Search brands, clients, emails…</span>
+        <span className="flex-1 truncate text-left">Search clients, emails…</span>
         <kbd className="hidden rounded border border-border px-1.5 text-[10px] sm:inline">Ctrl K</kbd>
       </button>
       <dialog

@@ -6,18 +6,15 @@ import {
   CircleCheck,
   CircleX,
   Handshake,
-  IndianRupee,
   MessageCircle,
   Percent,
   Send,
   Sparkles,
   Target,
-  Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { Timeline } from "@/components/activity/timeline";
 import { SentPerDayChart } from "@/components/charts/sent-per-day";
-import { InstagramIcon } from "@/components/icons";
 import { FitScore, StatusBadge } from "@/components/ui/badge";
 import { Card, CardHeader, StatTile } from "@/components/ui/card";
 import { EmptyState, PageHeader } from "@/components/ui/page-header";
@@ -26,9 +23,9 @@ import { lastNDays, messagesByDay } from "@/lib/domain/messages";
 import { dashboardStats, listActivities, listFollowUps, listSentMessages, pipelineFunnel, topOpportunities } from "@/lib/domain/repo";
 import type { Funnel } from "@/lib/domain/types";
 import { requireUser } from "@/lib/supabase/server";
-import { money, num, pct } from "@/lib/utils";
+import { num, pct } from "@/lib/utils";
 
-function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: Funnel; icon: React.ReactNode }) {
+function MiniFunnel({ title, href, f }: { title: string; href: string; f: Funnel }) {
   const steps = [
     ["Discovered", f.discovered],
     ["Contacted", f.contacted],
@@ -40,11 +37,7 @@ function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: 
   return (
     <Card>
       <CardHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            {icon} {title}
-          </span>
-        }
+        title={title}
         description={`Reply rate ${pct(f.reply_rate)} · Conversion ${pct(f.conversion_rate)}`}
         action={
           <Link href={href} className="text-xs text-accent hover:underline">
@@ -69,11 +62,9 @@ function MiniFunnel({ title, href, f, icon }: { title: string; href: string; f: 
 
 export default async function DashboardPage() {
   const { supabase } = await requireUser();
-  const [stats, funnel, brandFunnel, freelanceFunnel, overdue, today, activity, top, sent] = await Promise.all([
+  const [stats, funnel, overdue, today, activity, top, sent] = await Promise.all([
     dashboardStats(supabase),
     pipelineFunnel(supabase),
-    pipelineFunnel(supabase, undefined, undefined, "brand"),
-    pipelineFunnel(supabase, undefined, undefined, "freelance"),
     listFollowUps(supabase, { range: "overdue", limit: 10 }),
     listFollowUps(supabase, { range: "today", limit: 10 }),
     listActivities(supabase, { limit: 12 }),
@@ -81,7 +72,6 @@ export default async function DashboardPage() {
     listSentMessages(supabase),
   ]);
   const sentDays = lastNDays(messagesByDay(sent), 14);
-  const sentBrand = sent.filter((m) => m.kind === "brand").length;
   const sentToday = sentDays[0];
   const due = [...overdue, ...today];
   const hour = new Date().toLocaleString("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" });
@@ -98,14 +88,13 @@ export default async function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Brands" value={num(stats.total_brands)} icon={<InstagramIcon />} href="/brands" />
-        <StatTile label="Freelance clients" value={num(stats.total_freelance ?? 0)} icon={<BriefcaseBusiness />} href="/freelance" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <StatTile label="Clients" value={num(stats.total_leads)} icon={<BriefcaseBusiness />} href="/freelance" />
         <StatTile label="New (7 days)" value={num(stats.new_leads_7d)} icon={<Sparkles />} tone="accent" />
         <StatTile
           label="Messages sent"
           value={num(sent.length)}
-          hint={`${num(sentBrand)} brand · ${num(sent.length - sentBrand)} freelance · ${num(sentToday.total)} today`}
+          hint={`${num(sentToday.total)} today`}
           icon={<Send />}
         />
         <StatTile label="Replies" value={num(stats.replies_received)} icon={<MessageCircle />} />
@@ -122,15 +111,6 @@ export default async function DashboardPage() {
         <StatTile label="Negotiating" value={num(stats.negotiating)} icon={<Handshake />} tone="warning" />
         <StatTile label="Won" value={num(stats.won)} icon={<CircleCheck />} tone="success" />
         <StatTile label="Lost" value={num(stats.lost)} icon={<CircleX />} tone="danger" />
-        <StatTile label="Revenue received" value={money(stats.revenue_received, true)} icon={<IndianRupee />} tone="success" href="/revenue" />
-        <StatTile
-          label="Pending payments"
-          value={money(stats.pending_payments, true)}
-          hint={`${money(stats.expected_revenue, true)} expected from active deals`}
-          icon={<Wallet />}
-          tone="warning"
-          href="/revenue"
-        />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -152,12 +132,7 @@ export default async function DashboardPage() {
             <ul className="divide-y divide-border">
               {due.map((f) => (
                 <li key={f.id} className="flex flex-col gap-1 px-4 py-3">
-                  <Link href={`/leads/${f.lead.id}?tab=outreach`} className="inline-flex items-center gap-1.5 text-sm font-medium hover:text-accent">
-                    {f.lead.kind === "freelance" ? (
-                      <BriefcaseBusiness className="size-3.5 shrink-0 text-muted" />
-                    ) : (
-                      <InstagramIcon className="size-3.5 shrink-0 text-muted" />
-                    )}
+                  <Link href={`/leads/${f.lead.id}?tab=outreach`} className="text-sm font-medium hover:text-accent">
                     {f.lead.name}
                   </Link>
                   <FollowUpRow f={f} />
@@ -185,14 +160,7 @@ export default async function DashboardPage() {
                 <li key={l.id}>
                   <Link href={`/leads/${l.id}`} className="flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-surface-2/60">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {l.kind === "freelance" ? (
-                          <BriefcaseBusiness className="size-3.5 shrink-0 text-muted" />
-                        ) : (
-                          <InstagramIcon className="size-3.5 shrink-0 text-muted" />
-                        )}
-                        <span className="truncate">{l.name}</span>
-                      </p>
+                      <p className="truncate text-sm font-medium">{l.name}</p>
                       <p className="truncate text-[11px] text-muted">{l.suggested_service ?? l.industry ?? "—"}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
@@ -210,16 +178,11 @@ export default async function DashboardPage() {
       <Card className="mt-4">
         <CardHeader
           title="Messages sent per day"
-          description={`Last 14 days · ${num(sentToday.total)} today (${num(sentToday.brand)} brand, ${num(sentToday.freelance)} freelance)`}
+          description={`Last 14 days · ${num(sentToday.total)} today`}
           action={
-            <span className="flex gap-3 text-xs">
-              <Link href="/brands" className="text-accent hover:underline">
-                Brands by date
-              </Link>
-              <Link href="/freelance" className="text-accent hover:underline">
-                Clients by date
-              </Link>
-            </span>
+            <Link href="/freelance" className="text-xs text-accent hover:underline">
+              Clients by date
+            </Link>
           }
         />
         <div className="p-4">
@@ -229,8 +192,7 @@ export default async function DashboardPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4">
-          <MiniFunnel title="Brand pipeline" href="/brands" f={brandFunnel} icon={<InstagramIcon className="size-4" />} />
-          <MiniFunnel title="Freelance pipeline" href="/freelance" f={freelanceFunnel} icon={<BriefcaseBusiness className="size-4" />} />
+          <MiniFunnel title="Pipeline" href="/freelance" f={funnel} />
         </div>
         <Card className="lg:col-span-2">
           <CardHeader

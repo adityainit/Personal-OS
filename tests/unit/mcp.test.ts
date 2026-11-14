@@ -45,10 +45,11 @@ describe("MCP server", () => {
   it("lists every tool with a JSON schema and never exposes send/delete tools", async () => {
     const r = await rpc("tools/list");
     const tools = r.result.tools as { name: string; inputSchema: { type: string }; annotations?: { readOnlyHint?: boolean } }[];
-    expect(tools).toHaveLength(25);
+    expect(tools).toHaveLength(20);
     for (const t of tools) expect(t.inputSchema.type).toBe("object");
     const names = tools.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["create_lead", "mark_outreach_sent", "record_interaction", "list_follow_ups", "create_deal"]));
+    expect(names).toEqual(expect.arrayContaining(["create_lead", "mark_outreach_sent", "record_interaction", "list_follow_ups"]));
+    expect(names.some((n) => /deal|payment|revenue/.test(n))).toBe(false);
     expect(names.some((n) => /send_|delete|remove|email_|dm_/.test(n))).toBe(false);
     expect(tools.find((t) => t.name === "get_lead")?.annotations?.readOnlyHint).toBe(true);
   });

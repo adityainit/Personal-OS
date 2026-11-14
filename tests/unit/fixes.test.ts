@@ -2,19 +2,7 @@ import { describe, expect, it } from "vitest";
 import { firstError, contactSchema } from "@/lib/domain/schemas";
 import { countryName, countryOptions } from "@/lib/domain/phone";
 import { COUNTRY_NAMES } from "@/lib/domain/country-names";
-import { prettySummary, relative } from "@/lib/utils";
-
-describe("activity summaries", () => {
-  it("formats database amounts as rupees", () => {
-    expect(prettySummary("Payment received: 2000.00 for Logo (Acme)")).toBe("Payment received: ₹2,000 for Logo (Acme)");
-    expect(prettySummary("Deal created: Site (Acme) — 150000.00")).toBe("Deal created: Site (Acme) — ₹1,50,000");
-    expect(prettySummary("Deal amount updated: Site (5000.00 → 7500.50)")).toContain("→ ₹7,501");
-  });
-  it("leaves other text alone", () => {
-    expect(prettySummary("Acme v2.10: new → contacted")).toBe("Acme v2.10: new → contacted");
-    expect(prettySummary(null)).toBe("");
-  });
-});
+import { relative } from "@/lib/utils";
 
 describe("relative time", () => {
   it("shows 'just now' for tiny clock differences in both directions", () => {

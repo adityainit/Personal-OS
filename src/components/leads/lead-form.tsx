@@ -3,79 +3,49 @@ import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { PhoneField } from "@/components/ui/phone-field";
 import { LEAD_STATUSES, STATUS_LABEL } from "@/lib/domain/constants";
 import { splitPhone } from "@/lib/domain/phone";
-import type { Lead, LeadKind } from "@/lib/domain/types";
+import type { Lead } from "@/lib/domain/types";
 
 const COPY = {
-  brand: {
-    name: "Brand name *",
-    namePlaceholder: "e.g. Notion",
-    size: "Brand size",
-    opportunity: "Collaboration opportunity",
-    suggested: "Suggested collaboration",
-    suggestedPlaceholder: "Sponsored reel + story set",
-    research: "Products, audience, marketing, past creator collabs, pain points…",
-    similar: "Add even if a brand with a very similar name exists",
-    add: "Add brand",
-  },
-  freelance: {
-    name: "Business name *",
-    namePlaceholder: "e.g. Sharma Dental Clinic",
-    size: "Business size",
-    opportunity: "What they need",
-    suggested: "Service to offer",
-    suggestedPlaceholder: "Website redesign, landing page, automation…",
-    research: "What they do, their current website/online presence, problems you could fix…",
-    similar: "Add even if a client with a very similar name exists",
-    add: "Add client",
-  },
+  name: "Business name *",
+  namePlaceholder: "e.g. Sharma Dental Clinic",
+  size: "Business size",
+  opportunity: "What they need",
+  suggested: "Service to offer",
+  suggestedPlaceholder: "Website redesign, landing page, automation…",
+  research: "What they do, their current website/online presence, problems you could fix…",
+  similar: "Add even if a client with a very similar name exists",
+  add: "Add client",
 } as const;
 
-/** Fields for creating or editing a lead (brand deal or freelance client). Wrap in <ActionForm>. */
-export function LeadFields({ lead, kind: kindProp = "brand" }: { lead?: Lead; kind?: LeadKind }) {
-  const kind = lead?.kind ?? kindProp;
-  const c = COPY[kind];
+/** Fields for creating or editing a freelance client. Wrap in <ActionForm>. */
+export function LeadFields({ lead }: { lead?: Lead }) {
+  const c = COPY;
   const phone = splitPhone(lead?.phone_e164, lead?.phone_country);
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {!lead ? <input type="hidden" name="kind" value={kind} /> : null}
       <div className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted sm:col-span-2">
-        {kind === "brand" ? (
-          <>
-            <span className="font-medium text-fg">Required:</span> brand name and their Instagram handle (or website). You&apos;ll
-            reach them by DM or email. Email is optional — leave it empty if you can&apos;t find a public one. Never guess contact
-            details.
-          </>
-        ) : (
-          <>
-            <span className="font-medium text-fg">Required:</span> business name and their phone number with country code.
-            You&apos;ll reach them on WhatsApp or by email. Instagram and email are optional. Never guess contact details.
-          </>
-        )}
+        <span className="font-medium text-fg">Required:</span> business name and their phone number with country code.
+        You&apos;ll reach them on WhatsApp or by email. Instagram and email are optional. Never guess contact details.
       </div>
 
       <Field label={c.name} className="sm:col-span-2">
         <Input name="name" required defaultValue={lead?.name} placeholder={c.namePlaceholder} />
       </Field>
 
-      {kind === "freelance" ? (
-        <div className="sm:col-span-2">
-          <PhoneField
-            label="Phone number (WhatsApp)"
-            required
-            defaultCountry={phone.country}
-            defaultNumber={phone.national}
-          />
-        </div>
-      ) : null}
+      <div className="sm:col-span-2">
+        <PhoneField
+          label="Phone number (WhatsApp)"
+          required
+          defaultCountry={phone.country}
+          defaultNumber={phone.national}
+        />
+      </div>
 
-      <Field
-        label={kind === "brand" ? "Instagram handle *" : "Business Instagram"}
-        hint={kind === "brand" ? "Where you'll DM them" : "Optional — only if they have one"}
-      >
+      <Field label="Business Instagram" hint="Optional — only if they have one">
         <Input name="instagram_handle" defaultValue={lead?.instagram_handle ?? ""} placeholder="@business or instagram.com/business" />
       </Field>
       <Field label="Website">
-        <Input name="website" defaultValue={lead?.website ?? ""} placeholder="brand.com" />
+        <Input name="website" defaultValue={lead?.website ?? ""} placeholder="business.com" />
       </Field>
       <Field label="LinkedIn profile">
         <Input name="linkedin_url" defaultValue={lead?.linkedin_url ?? ""} placeholder="linkedin.com/company/…" />
@@ -87,7 +57,7 @@ export function LeadFields({ lead, kind: kindProp = "brand" }: { lead?: Lead; ki
       {!lead ? (
         <>
           <Field label="Contact person">
-            <Input name="contact_person" placeholder={kind === "brand" ? "Marketing / partnerships contact" : "Owner / manager"} />
+            <Input name="contact_person" placeholder="Owner / manager" />
           </Field>
           <Field label="Email (optional)">
             <Input name="email" type="email" autoComplete="off" placeholder="Only if publicly listed" />
@@ -124,7 +94,7 @@ export function LeadFields({ lead, kind: kindProp = "brand" }: { lead?: Lead; ki
       <Field label={c.opportunity} className="sm:col-span-2">
         <Textarea name="opportunity" rows={2} defaultValue={lead?.opportunity ?? ""} />
       </Field>
-      <Field label={kind === "brand" ? "Why they'd work with me" : "Why I'm a good fit"} className="sm:col-span-2">
+      <Field label="Why I'm a good fit" className="sm:col-span-2">
         <Textarea name="why_fit" rows={2} defaultValue={lead?.why_fit ?? ""} />
       </Field>
       <Field label={c.suggested} className="sm:col-span-2">

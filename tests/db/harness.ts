@@ -37,19 +37,23 @@ export const USER_B = "00000000-0000-0000-0000-00000000000b";
 
 const MIGRATIONS = join(__dirname, "..", "..", "supabase", "migrations");
 
+const migrationFiles = () => readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort();
+const runMigration = (db: PGlite, file: string) =>
+  db.exec(readFileSync(join(MIGRATIONS, file), "utf8").replace(/create extension if not exists pg_cron;/g, ""));
+
+const SEED_USERS = `insert into private.allowed_emails values ('a@example.com'), ('b@example.com');
+  insert into auth.users (id, email) values
+  ('${USER_A}', 'a@example.com'), ('${USER_B}', 'b@example.com');`;
+
 /** A fresh database with every migration applied and two users. */
 export async function createDb() {
   const db = new PGlite({ extensions: { pg_trgm } });
   await db.exec(SUPABASE_STUB);
-  for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort()) {
-    await db.exec(readFileSync(join(MIGRATIONS, file), "utf8").replace(/create extension if not exists pg_cron;/g, ""));
-  }
-
-  await db.exec(`insert into private.allowed_emails values ('a@example.com'), ('b@example.com');
-    insert into auth.users (id, email) values
-    ('${USER_A}', 'a@example.com'), ('${USER_B}', 'b@example.com');`);
+  for (const file of migrationFiles()) await runMigration(db, file);
+  await db.exec(SEED_USERS);
   return db;
 }
+
 
 /** Run statements as an authenticated user (optionally as the Claude OAuth client). */
 export async function as<T = Record<string, unknown>>(

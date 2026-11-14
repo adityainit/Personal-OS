@@ -3,17 +3,17 @@ import { dayLabel, lastNDays, messagesByDay, messagesByLead, type SentMessage } 
 
 const rows: SentMessage[] = [
   // 9 Nov 01:00 IST is still 8 Nov in UTC: must count as 9 Nov.
-  { lead_id: "a", sent_at: "2026-11-08T19:30:00.000Z", channel: "instagram_dm", kind: "brand" },
-  { lead_id: "a", sent_at: "2026-11-09T05:00:00.000Z", channel: "email", kind: "brand" },
-  { lead_id: "b", sent_at: "2026-11-09T06:00:00.000Z", channel: "whatsapp", kind: "freelance" },
-  { lead_id: "c", sent_at: "2026-11-07T06:00:00.000Z", channel: "instagram_dm", kind: "brand" },
+  { lead_id: "a", sent_at: "2026-11-08T19:30:00.000Z", channel: "whatsapp" },
+  { lead_id: "a", sent_at: "2026-11-09T05:00:00.000Z", channel: "email" },
+  { lead_id: "b", sent_at: "2026-11-09T06:00:00.000Z", channel: "whatsapp" },
+  { lead_id: "c", sent_at: "2026-11-07T06:00:00.000Z", channel: "whatsapp" },
 ];
 
 describe("messages sent per day", () => {
-  it("groups by day in IST, newest first, with per-pipeline counts and distinct leads", () => {
+  it("groups by day in IST, newest first, with counts and distinct leads", () => {
     const days = messagesByDay(rows);
     expect(days.map((d) => d.day)).toEqual(["2026-11-09", "2026-11-07"]);
-    expect(days[0]).toMatchObject({ total: 3, brand: 2, freelance: 1 });
+    expect(days[0]).toMatchObject({ total: 3 });
     expect(days[0].leadIds.sort()).toEqual(["a", "b"]);
   });
 
